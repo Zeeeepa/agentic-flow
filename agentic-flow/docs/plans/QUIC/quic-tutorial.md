@@ -104,7 +104,7 @@ npx agentic-flow \
 * Agent requests route through `http://localhost:4433` (QUIC proxy)
 * Streaming output arrives continuously rather than after a long wait
 
-**What works in v1.6.4 (100% Complete):**
+**v1.6.4:**
 * ✅ QUIC proxy spawns successfully
 * ✅ Agent routes through proxy (`ANTHROPIC_BASE_URL` set to QUIC port)
 * ✅ Background process management and cleanup
