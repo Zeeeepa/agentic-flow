@@ -1,0 +1,71 @@
+version: '3.8'
+
+services:
+  # Main agent service with auto-restart
+  agentic-flow:
+    build:
+      context: ../
+      dockerfile: deployment/Dockerfile
+    container_name: agentic-flow-production
+    env_file:
+      - .env
+    environment:
+      # Override with production settings
+      NODE_ENV: production
+      HEALTH_PORT: 8080
+      KEEP_ALIVE: "true"
+    volumes:
+      # Persistent storage for ReasoningBank database
+      - reasoningbank-data:/app/.swarm
+      # Workspace for agent file operations
+      - workspace:/workspace
+      # Optional: Mount local agents for development
+      # - ../.claude/agents:/app/.claude/agents:ro
+    ports:
+      - "8080:8080"  # Health check endpoint
+      - "4433:4433"  # QUIC transport (if enabled)
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - agentic-network
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 4G
+        reservations:
+          cpus: '1.0'
+          memory: 2G
+
+  # Optional: Monitoring with health dashboard
+  health-monitor:
+    image: nginx:alpine
+    container_name: agentic-flow-monitor
+    volumes:
+      - ./monitoring/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./monitoring/dashboard.html:/usr/share/nginx/html/index.html:ro
+    ports:
+      - "8081:80"
+    depends_on:
+      - agentic-flow
+    restart: unless-stopped
+    networks:
+      - agentic-network
+
+volumes:
+  # Persistent storage for learning memory
+  reasoningbank-data:
+    driver: local
+  # Workspace for agent operations
+  workspace:
+    driver: local
+
+networks:
+  agentic-network:
+    driver: bridge
+
