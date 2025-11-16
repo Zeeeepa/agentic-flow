@@ -55,7 +55,7 @@ export interface StatisticalTest {
   pValue: number;
   significant: boolean;
   alpha: number;
-  effect Size?: number;
+  effectSize?: number;
   powerAnalysis?: PowerAnalysis;
 }
 

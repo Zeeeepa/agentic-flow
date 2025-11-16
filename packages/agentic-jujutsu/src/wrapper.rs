@@ -1,11 +1,11 @@
 //! Main wrapper for Jujutsu operations
 
 use crate::{
-    agent_coordination::{AgentCoordination, AgentConflict, AgentStats, CoordinationStats},
+    agent_coordination::AgentCoordination,
     config::JJConfig,
     error::{JJError, Result},
     operations::{JJOperation, JJOperationLog, OperationType},
-    reasoning_bank::{DecisionSuggestion, LearningStats, Pattern, ReasoningBank, Trajectory},
+    reasoning_bank::{ReasoningBank, Trajectory},
     types::{JJBranch, JJCommit, JJConflict, JJDiff, JJResult},
     native::execute_jj_command,
 };
@@ -467,7 +467,6 @@ impl JJWrapper {
             if parts.len() >= 2 {
                 let name = parts[0].trim().to_string();
                 let target = parts[1]
-                    .trim()
                     .split_whitespace()
                     .next()
                     .unwrap_or("")
@@ -941,7 +940,7 @@ impl JJWrapper {
 
         // Update operation with fingerprint
         {
-            let mut op_log = self.operation_log.lock().map_err(|e| {
+            let op_log = self.operation_log.lock().map_err(|e| {
                 napi::Error::from_reason(format!("Failed to lock operation log: {}", e))
             })?;
 
@@ -1047,7 +1046,7 @@ impl JJWrapper {
         operation_id: String,
         fingerprint: String,
     ) -> napi::Result<()> {
-        let mut op_log = self.operation_log.lock().map_err(|e| {
+        let op_log = self.operation_log.lock().map_err(|e| {
             napi::Error::from_reason(format!("Failed to lock operation log: {}", e))
         })?;
 

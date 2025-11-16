@@ -1,8 +1,7 @@
 //! Server-Sent Events (SSE) transport for MCP (HTTP-based communication)
 
-use super::types::{MCPRequest, MCPResponse, MCPError};
+use super::types::{MCPRequest, MCPResponse};
 use crate::{Result, JJError};
-use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::collections::HashMap;
 use tokio::sync::{mpsc, RwLock};

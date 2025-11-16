@@ -19,7 +19,6 @@ pub use stdio::{StdioTransport, StdioServer};
 pub use sse::{SSETransport, SSEServer};
 pub use types::{MCPRequest, MCPResponse, MCPMethod, MCPError};
 
-use crate::Result;
 
 /// MCP transport types
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

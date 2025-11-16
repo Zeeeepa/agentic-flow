@@ -1,6 +1,6 @@
 //! MCP client implementation
 
-use super::types::{MCPRequest, MCPResponse, MCPError};
+use super::types::{MCPRequest, MCPResponse};
 use super::{TransportType, StdioTransport, SSETransport};
 use crate::{Result, JJError};
 use serde_json::Value;

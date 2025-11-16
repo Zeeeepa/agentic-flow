@@ -14,11 +14,12 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex};
 use uuid::Uuid;
 
-use crate::operations::{JJOperation, OperationType};
+use crate::operations::JJOperation;
 use crate::error::{JJError, Result};
 
 /// Encryption state for ReasoningBank
 #[derive(Debug, Clone)]
+#[derive(Default)]
 pub struct EncryptionState {
     /// Whether encryption is enabled
     pub enabled: bool,
@@ -28,15 +29,6 @@ pub struct EncryptionState {
     pub public_key: Option<Vec<u8>>,
 }
 
-impl Default for EncryptionState {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            key: None,
-            public_key: None,
-        }
-    }
-}
 
 /// A trajectory represents a sequence of operations with context and outcome
 #[derive(Debug, Clone, Serialize, Deserialize)]

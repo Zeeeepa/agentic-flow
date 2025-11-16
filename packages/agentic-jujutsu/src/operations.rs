@@ -1136,6 +1136,7 @@ impl Default for JJOperationLog {
 
 /// Statistics about operations
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct OperationStatistics {
     /// Total number of operations
     pub total: usize,
@@ -1159,19 +1160,6 @@ pub struct OperationStatistics {
     pub max_duration_ms: u64,
 }
 
-impl Default for OperationStatistics {
-    fn default() -> Self {
-        Self {
-            total: 0,
-            successful: 0,
-            failed: 0,
-            by_type: HashMap::new(),
-            total_duration_ms: 0,
-            avg_duration_ms: 0,
-            max_duration_ms: 0,
-        }
-    }
-}
 
 #[cfg(test)]
 mod tests {
@@ -1220,7 +1208,7 @@ mod tests {
     #[test]
     fn test_operation_builder() {
         let op = JJOperation::builder()
-            .operation_type("Rebase".to_string())
+            .operation_type(OperationType::Rebase)
             .command("jj rebase".to_string())
             .user("alice".to_string())
             .hostname("localhost".to_string())
@@ -1230,7 +1218,7 @@ mod tests {
 
         assert_eq!(op.operation_type, "Rebase");
         assert_eq!(op.user, "alice");
-        assert_eq!(op.get_metadata("commits"), Some(&"5".to_string()));
+        assert_eq!(op.get_metadata("commits"), Some("5".to_string()));
         assert_eq!(op.duration_ms, 1500);
     }
 

@@ -237,7 +237,7 @@ export class DataSharingControls {
   /**
    * Activate/deactivate policy
    */
-  async setPolicy ActiveStatus(patientId: string, active: boolean): Promise<boolean> {
+  async setPolicyActiveStatus(patientId: string, active: boolean): Promise<boolean> {
     const policyId = this.patientPolicies.get(patientId);
     if (!policyId) {
       return false;
