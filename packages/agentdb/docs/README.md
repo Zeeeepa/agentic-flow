@@ -84,6 +84,12 @@ Historical documentation and deprecated content
 - Browser/WASM fixes and CLI initialization
 - Publishing summaries
 
+### 📍 **current-status/**
+Current production status and optimization reports
+- [Production Readiness Report](current-status/FINAL_PRODUCTION_READINESS_REPORT_2025-11-29.md) - Latest production status
+- [Phase 2 MCP Optimization](current-status/PHASE-2-MCP-OPTIMIZATION-REVIEW.md) - MCP optimization review
+- [MCP Tool Optimization Guide](current-status/MCP_TOOL_OPTIMIZATION_GUIDE.md) - Performance tuning
+
 ### 🗄️ **archive/**
 Archived session reports and historical documents
 - **sessions/** - Development session summaries (2025-11-28)
@@ -110,13 +116,17 @@ Archived session reports and historical documents
 ## 📑 Key Documents
 
 ### Current Status
-- [Production Readiness Report](FINAL_PRODUCTION_READINESS_REPORT_2025-11-29.md) - Latest status
-- [Phase 2 MCP Optimization Review](PHASE-2-MCP-OPTIMIZATION-REVIEW.md) - Optimization status
-- [MCP Tool Optimization Guide](MCP_TOOL_OPTIMIZATION_GUIDE.md) - Performance tuning
-- [Validation Summary](README-VALIDATION-SUMMARY.md) - Test coverage
+- [Production Readiness Report](current-status/FINAL_PRODUCTION_READINESS_REPORT_2025-11-29.md) - Latest status
+- [Phase 2 MCP Optimization Review](current-status/PHASE-2-MCP-OPTIMIZATION-REVIEW.md) - Optimization status
+- [MCP Tool Optimization Guide](current-status/MCP_TOOL_OPTIMIZATION_GUIDE.md) - Performance tuning
+
+### Validation & Testing
+- [Validation Summary README](validation/VALIDATION-SUMMARY-README.md) - Test coverage overview
+- [CLI Deep Validation Report](validation/CLI-DEEP-VALIDATION-REPORT.md) - CLI testing results
+- [Validation Summary](validation/VALIDATION-SUMMARY.md) - Overall validation status
 
 ### Performance
-- [WASM Vector README](README-WASM-VECTOR.md) - WASM acceleration
+- [WASM Vector README](implementation/WASM-VECTOR-README.md) - WASM acceleration
 - [Performance Report](reports/PERFORMANCE-REPORT.md) - Benchmarks
 - [Batch Optimization](reports/BATCH-OPTIMIZATION-RESULTS.md) - Bulk operations
 

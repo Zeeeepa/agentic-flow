@@ -209,6 +209,9 @@ class AgentDBCLI {
 
     log.success(`Created experiment #${expId}`);
     log.info('Use `agentdb causal experiment add-observation` to record data');
+
+    // Save database to persist experiment
+    this.db.save();
   }
 
   async causalExperimentAddObservation(params: {

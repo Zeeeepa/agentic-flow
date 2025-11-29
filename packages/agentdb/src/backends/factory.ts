@@ -44,29 +44,40 @@ export async function detectBackends(): Promise<BackendDetection> {
     hnswlib: false
   };
 
-  // Check RuVector packages
+  // Check RuVector packages (main package or scoped packages)
   try {
-    const core = await import('@ruvector/core');
+    // Try main ruvector package first
+    const ruvector = await import('ruvector');
     result.ruvector.core = true;
-    result.ruvector.native = core.isNative?.() ?? false;
+    result.ruvector.gnn = true; // Main package includes GNN
+    result.ruvector.graph = true; // Main package includes Graph
+    result.ruvector.native = ruvector.isNative?.() ?? false;
     result.available = 'ruvector';
-
-    // Check optional packages
-    try {
-      await import('@ruvector/gnn');
-      result.ruvector.gnn = true;
-    } catch {
-      // GNN not installed - this is optional
-    }
-
-    try {
-      await import('@ruvector/graph-node');
-      result.ruvector.graph = true;
-    } catch {
-      // Graph not installed - this is optional
-    }
   } catch {
-    // RuVector not installed - will try fallback
+    // Try scoped packages as fallback
+    try {
+      const core = await import('@ruvector/core');
+      result.ruvector.core = true;
+      result.ruvector.native = core.isNative?.() ?? false;
+      result.available = 'ruvector';
+
+      // Check optional packages
+      try {
+        await import('@ruvector/gnn');
+        result.ruvector.gnn = true;
+      } catch {
+        // GNN not installed - this is optional
+      }
+
+      try {
+        await import('@ruvector/graph-node');
+        result.ruvector.graph = true;
+      } catch {
+        // Graph not installed - this is optional
+      }
+    } catch {
+      // RuVector not installed - will try fallback
+    }
   }
 
   // Check HNSWLib
@@ -177,6 +188,6 @@ export async function isBackendAvailable(backend: 'ruvector' | 'hnswlib'): Promi
  */
 export function getInstallCommand(backend: 'ruvector' | 'hnswlib'): string {
   return backend === 'ruvector'
-    ? 'npm install @ruvector/core'
+    ? 'npm install ruvector'
     : 'npm install hnswlib-node';
 }

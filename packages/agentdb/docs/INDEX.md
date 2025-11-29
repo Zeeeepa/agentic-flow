@@ -71,11 +71,18 @@
 - [Deployment Report V1.6.1](./validation/DEPLOYMENT-REPORT-V1.6.1.md)
 
 ## Current Status
-- [README Validation Summary](./README-VALIDATION-SUMMARY.md)
-- [README WASM Vector](./README-WASM-VECTOR.md)
-- [MCP Tool Optimization Guide](./MCP_TOOL_OPTIMIZATION_GUIDE.md)
-- [Phase 2 MCP Optimization Review](./PHASE-2-MCP-OPTIMIZATION-REVIEW.md)
-- [Final Production Readiness Report](./FINAL_PRODUCTION_READINESS_REPORT_2025-11-29.md)
+
+### Production Status (current-status/)
+- [Final Production Readiness Report](./current-status/FINAL_PRODUCTION_READINESS_REPORT_2025-11-29.md) - Latest production status
+- [Phase 2 MCP Optimization Review](./current-status/PHASE-2-MCP-OPTIMIZATION-REVIEW.md) - MCP optimization status
+- [MCP Tool Optimization Guide](./current-status/MCP_TOOL_OPTIMIZATION_GUIDE.md) - Performance tuning guide
+
+### Implementation Details
+- [WASM Vector README](./implementation/WASM-VECTOR-README.md) - WASM acceleration overview
+
+### Validation Status
+- [Validation Summary README](./validation/VALIDATION-SUMMARY-README.md) - Test coverage overview
+- [CLI Deep Validation Report](./validation/CLI-DEEP-VALIDATION-REPORT.md) - Comprehensive CLI testing
 
 ## Release Notes
 

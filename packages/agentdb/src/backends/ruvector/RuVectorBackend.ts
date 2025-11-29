@@ -32,7 +32,16 @@ export class RuVectorBackend implements VectorBackend {
     if (this.initialized) return;
 
     try {
-      const { VectorDB } = await import('@ruvector/core');
+      // Try main ruvector package first (includes core, gnn, graph)
+      let VectorDB;
+      try {
+        const ruvector = await import('ruvector');
+        VectorDB = ruvector.VectorDB || ruvector.default?.VectorDB;
+      } catch {
+        // Fallback to @ruvector/core for backward compatibility
+        const core = await import('@ruvector/core');
+        VectorDB = core.VectorDB || core.default;
+      }
 
       this.db = new VectorDB(this.config.dimension, {
         metric: this.config.metric,
@@ -44,7 +53,8 @@ export class RuVectorBackend implements VectorBackend {
       this.initialized = true;
     } catch (error) {
       throw new Error(
-        `RuVector initialization failed. Please install: npm install @ruvector/core\n` +
+        `RuVector initialization failed. Please install: npm install ruvector\n` +
+        `Or legacy packages: npm install @ruvector/core\n` +
         `Error: ${(error as Error).message}`
       );
     }

@@ -120,7 +120,7 @@ echo "========================================================================"
 echo ""
 
 test_command "skill create" \
-  "npx agentdb skill create 'test-skill' 'A test skill' 'code here' --db $TEST_DB" \
+  "npx agentdb skill create 'test-skill-$(date +%s)' 'A test skill' 'code here' --db $TEST_DB" \
   "success"
 
 test_command "skill search" \
@@ -146,15 +146,15 @@ test_command "causal add-edge" \
   "success"
 
 test_command "causal experiment create" \
-  "npx agentdb causal experiment create 'test-exp' 'cause' 'effect' --db $TEST_DB" \
+  "AGENTDB_PATH=$TEST_DB npx agentdb causal experiment create 'test-exp' 'cause' 'effect'" \
   "success"
 
 test_command "causal experiment add-observation" \
-  "npx agentdb causal experiment add-observation 1 true 0.8 --db $TEST_DB" \
+  "AGENTDB_PATH=$TEST_DB npx agentdb causal experiment add-observation 1 true 0.8" \
   "success"
 
 test_command "causal experiment calculate" \
-  "npx agentdb causal experiment calculate 1 --db $TEST_DB" \
+  "AGENTDB_PATH=$TEST_DB npx agentdb causal experiment calculate 1" \
   "success"
 
 test_command "causal query" \
