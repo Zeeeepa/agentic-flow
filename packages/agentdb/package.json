@@ -78,6 +78,8 @@
   "homepage": "https://agentdb.ruv.io",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.20.1",
+    "@ruvector/core": "^0.1.15",
+    "@ruvector/gnn": "^0.1.15",
     "@xenova/transformers": "^2.17.2",
     "chalk": "^5.3.0",
     "commander": "^12.1.0",

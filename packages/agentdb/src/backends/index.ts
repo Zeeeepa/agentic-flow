@@ -29,4 +29,4 @@ export {
 } from './factory.js';
 
 export type { BackendType, BackendDetection } from './factory.js';
-export type { LearningConfig, TrainingSample, TrainingResult } from './ruvector/RuVectorLearning.js';
+export type { LearningConfig, EnhancementOptions } from './ruvector/RuVectorLearning.js';

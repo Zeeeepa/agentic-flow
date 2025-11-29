@@ -1,43 +1,43 @@
 /**
  * RuVectorLearning - GNN-Enhanced Vector Search
  *
- * Integrates Graph Neural Networks for query enhancement and self-learning.
+ * Integrates Graph Neural Networks for query enhancement using @ruvector/gnn.
  * Requires optional @ruvector/gnn package.
  *
  * Features:
- * - Query enhancement using neighbor context
- * - Training from success/failure feedback
- * - Persistent model storage
+ * - Query enhancement using neighbor context with multi-head attention
+ * - Differentiable search with soft weights
+ * - Hierarchical forward pass through GNN layers
  * - Graceful degradation when GNN not available
+ *
+ * Note: @ruvector/gnn provides stateless GNN layers (inference only).
+ * Training is handled separately by the consuming application.
  */
 
 export interface LearningConfig {
   inputDim: number;
-  outputDim: number;
+  hiddenDim: number;
   heads: number;
-  learningRate: number;
+  dropout?: number;
 }
 
-export interface TrainingSample {
-  embedding: Float32Array;
-  label: number;
-}
-
-export interface TrainingResult {
-  epochs: number;
-  finalLoss: number;
-  samples: number;
+export interface EnhancementOptions {
+  temperature?: number;  // For differentiable search (default: 1.0)
+  k?: number;           // Number of neighbors to consider (default: 5)
 }
 
 export class RuVectorLearning {
-  private gnnLayer: any;
+  private gnnLayer: any;  // RuvectorLayer from @ruvector/gnn
   private config: LearningConfig;
-  private trainingBuffer: Array<{ embedding: number[]; label: number }> = [];
-  private trained = false;
   private initialized = false;
+  private differentiableSearch: any;
+  private hierarchicalForward: any;
 
   constructor(config: LearningConfig) {
-    this.config = config;
+    this.config = {
+      ...config,
+      dropout: config.dropout ?? 0.1,
+    };
   }
 
   /**
@@ -47,13 +47,18 @@ export class RuVectorLearning {
     if (this.initialized) return;
 
     try {
-      const { GNNLayer } = await import('@ruvector/gnn');
+      // Dynamic import with runtime property access
+      const gnnModule = await import('@ruvector/gnn') as any;
 
-      this.gnnLayer = new GNNLayer(
+      this.gnnLayer = new gnnModule.RuvectorLayer(
         this.config.inputDim,
-        this.config.outputDim,
-        this.config.heads
+        this.config.hiddenDim,
+        this.config.heads,
+        this.config.dropout!
       );
+
+      this.differentiableSearch = gnnModule.differentiableSearch;
+      this.hierarchicalForward = gnnModule.hierarchicalForward;
 
       this.initialized = true;
     } catch (error) {
@@ -69,6 +74,11 @@ export class RuVectorLearning {
    *
    * Uses Graph Attention Network to aggregate information from
    * nearest neighbors, weighted by their relevance scores.
+   *
+   * @param query - Query embedding to enhance
+   * @param neighbors - Neighbor embeddings
+   * @param weights - Edge weights (relevance scores)
+   * @returns Enhanced query embedding
    */
   enhance(
     query: Float32Array,
@@ -77,16 +87,12 @@ export class RuVectorLearning {
   ): Float32Array {
     this.ensureInitialized();
 
-    if (!this.trained) {
-      // Return unchanged if model not trained yet
-      return query;
-    }
-
     if (neighbors.length === 0) {
       return query;
     }
 
     try {
+      // Forward pass through GNN layer
       const result = this.gnnLayer.forward(
         Array.from(query),
         neighbors.map(n => Array.from(n)),
@@ -101,107 +107,128 @@ export class RuVectorLearning {
   }
 
   /**
-   * Add training sample for later batch training
+   * Differentiable search with soft attention
+   *
+   * Uses soft attention mechanism instead of hard top-k selection.
+   * Returns indices and weights that can be used for gradient-based optimization.
+   *
+   * @param query - Query embedding
+   * @param candidates - Candidate embeddings
+   * @param options - Search options
+   * @returns Search result with indices and soft weights
    */
-  addSample(embedding: Float32Array, success: boolean): void {
-    this.trainingBuffer.push({
-      embedding: Array.from(embedding),
-      label: success ? 1 : 0
-    });
-  }
-
-  /**
-   * Train GNN model on accumulated samples
-   */
-  async train(options: {
-    epochs?: number;
-    batchSize?: number;
-  } = {}): Promise<TrainingResult> {
+  search(
+    query: Float32Array,
+    candidates: Float32Array[],
+    options: EnhancementOptions = {}
+  ): { indices: number[]; weights: number[] } {
     this.ensureInitialized();
 
-    if (this.trainingBuffer.length < 10) {
-      throw new Error(
-        `Insufficient training samples: ${this.trainingBuffer.length}/10 minimum required`
+    const k = options.k ?? Math.min(5, candidates.length);
+    const temperature = options.temperature ?? 1.0;
+
+    try {
+      const result = this.differentiableSearch(
+        Array.from(query),
+        candidates.map(c => Array.from(c)),
+        k,
+        temperature
       );
-    }
 
-    const epochs = options.epochs || 100;
-    const batchSize = options.batchSize || 32;
-
-    try {
-      const result = await this.gnnLayer.train(this.trainingBuffer, {
-        epochs,
-        learningRate: this.config.learningRate,
-        batchSize
-      });
-
-      this.trained = true;
-      const sampleCount = this.trainingBuffer.length;
-      this.trainingBuffer = []; // Clear buffer after training
-
+      return result;
+    } catch (error) {
+      console.warn(`[RuVectorLearning] Differentiable search failed: ${(error as Error).message}`);
+      // Fallback: return top-k indices with uniform weights
       return {
-        epochs,
-        finalLoss: result.finalLoss || 0,
-        samples: sampleCount
+        indices: Array.from({ length: k }, (_, i) => i),
+        weights: Array.from({ length: k }, () => 1.0 / k)
       };
-    } catch (error) {
-      throw new Error(`Training failed: ${(error as Error).message}`);
     }
   }
 
   /**
-   * Save trained model to disk
+   * Hierarchical forward pass through multiple GNN layers
+   *
+   * Used for HNSW-style hierarchical search where embeddings
+   * are organized by graph layers.
+   *
+   * @param query - Query embedding
+   * @param layerEmbeddings - Embeddings organized by layer
+   * @returns Final enhanced embedding
    */
-  async save(path: string): Promise<void> {
+  enhanceHierarchical(
+    query: Float32Array,
+    layerEmbeddings: Float32Array[][]
+  ): Float32Array {
     this.ensureInitialized();
 
-    if (!this.trained) {
-      throw new Error('Cannot save untrained model');
+    if (layerEmbeddings.length === 0) {
+      return query;
     }
 
     try {
-      this.gnnLayer.save(path);
+      // Serialize GNN layer for hierarchical processing
+      const layerJson = this.gnnLayer.toJson();
+
+      const result = this.hierarchicalForward(
+        Array.from(query),
+        layerEmbeddings.map(layer => layer.map(e => Array.from(e))),
+        [layerJson]  // Single layer for now
+      );
+
+      return new Float32Array(result);
     } catch (error) {
-      throw new Error(`Model save failed: ${(error as Error).message}`);
+      console.warn(`[RuVectorLearning] Hierarchical enhancement failed: ${(error as Error).message}`);
+      return query;
     }
   }
 
   /**
-   * Load trained model from disk
+   * Serialize GNN layer to JSON
+   *
+   * Allows saving/loading the GNN layer configuration.
+   *
+   * @returns JSON string representation
    */
-  async load(path: string): Promise<void> {
+  toJson(): string {
     this.ensureInitialized();
+    return this.gnnLayer.toJson();
+  }
+
+  /**
+   * Create GNN layer from JSON
+   *
+   * @param json - JSON string from toJson()
+   * @returns New RuVectorLearning instance
+   */
+  static async fromJson(json: string, config: LearningConfig): Promise<RuVectorLearning> {
+    const learning = new RuVectorLearning(config);
+    await learning.initialize();
 
     try {
-      this.gnnLayer.load(path);
-      this.trained = true;
+      const gnnModule = await import('@ruvector/gnn') as any;
+      learning.gnnLayer = gnnModule.RuvectorLayer.fromJson(json);
+      return learning;
     } catch (error) {
-      throw new Error(`Model load failed: ${(error as Error).message}`);
+      throw new Error(`Failed to load GNN from JSON: ${(error as Error).message}`);
     }
   }
 
   /**
-   * Get training statistics
+   * Get current state
    */
-  getStats(): {
+  getState(): {
     initialized: boolean;
-    trained: boolean;
-    bufferSize: number;
     config: LearningConfig;
+    hiddenDim: number;
+    heads: number;
   } {
     return {
       initialized: this.initialized,
-      trained: this.trained,
-      bufferSize: this.trainingBuffer.length,
-      config: this.config
+      config: this.config,
+      hiddenDim: this.config.hiddenDim,
+      heads: this.config.heads,
     };
-  }
-
-  /**
-   * Clear training buffer without training
-   */
-  clearBuffer(): void {
-    this.trainingBuffer = [];
   }
 
   /**
