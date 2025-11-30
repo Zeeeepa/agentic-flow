@@ -36,9 +36,10 @@ RUN npm install --include=optional --legacy-peer-deps
 # =============================================================================
 FROM base AS builder
 
-# Copy source code
+# Copy source code and scripts
 COPY src/ ./src/
 COPY scripts/ ./scripts/
+COPY simulation/ ./simulation/
 
 # Build TypeScript and browser bundle
 RUN npm run build
