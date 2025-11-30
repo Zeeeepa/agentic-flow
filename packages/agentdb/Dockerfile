@@ -46,8 +46,8 @@ RUN npm run build
 
 # Verify build outputs
 RUN ls -lh dist/ && \
-    test -f dist/index.js && \
-    test -f dist/cli/agentdb-cli.js && \
+    test -f dist/src/index.js && \
+    test -f dist/src/cli/agentdb-cli.js && \
     echo "✅ Build successful"
 
 # =============================================================================
