@@ -14,20 +14,22 @@ import { EmbeddingService } from './EmbeddingService.js';
 import { VectorBackend } from '../backends/VectorBackend.js';
 import type { GraphDatabaseAdapter } from '../backends/graph/GraphDatabaseAdapter.js';
 import { NodeIdMapper } from '../utils/NodeIdMapper.js';
+import { QueryCache, type QueryCacheConfig } from '../core/QueryCache.js';
 
 export interface Skill {
   id?: number;
   name: string;
   description?: string;
-  signature?: {  // v1 API: optional
+  signature?: {
+    // v1 API: optional
     inputs: Record<string, any>;
     outputs: Record<string, any>;
   };
   code?: string;
   successRate: number;
-  uses?: number;  // v1 API: optional (defaults to 0)
-  avgReward?: number;  // v1 API: optional (defaults to 0)
-  avgLatencyMs?: number;  // v1 API: optional (defaults to 0)
+  uses?: number; // v1 API: optional (defaults to 0)
+  avgReward?: number; // v1 API: optional (defaults to 0)
+  avgLatencyMs?: number; // v1 API: optional (defaults to 0)
   createdFromEpisode?: number;
   metadata?: Record<string, any>;
 }
@@ -55,18 +57,29 @@ export class SkillLibrary {
   private embedder: EmbeddingService;
   private vectorBackend: VectorBackend | null;
   private graphBackend?: any; // GraphBackend or GraphDatabaseAdapter
+  private queryCache: QueryCache;
 
-  constructor(db: IDatabaseConnection, embedder: EmbeddingService, vectorBackend?: VectorBackend, graphBackend?: any) {
+  constructor(
+    db: IDatabaseConnection,
+    embedder: EmbeddingService,
+    vectorBackend?: VectorBackend,
+    graphBackend?: any,
+    cacheConfig?: QueryCacheConfig
+  ) {
     this.db = db;
     this.embedder = embedder;
     this.vectorBackend = vectorBackend || null;
     this.graphBackend = graphBackend;
+    this.queryCache = new QueryCache(cacheConfig);
   }
 
   /**
    * Create a new skill manually or from an episode
+   * Invalidates skill cache
    */
   async createSkill(skill: Skill): Promise<number> {
+    // Invalidate skills cache on write
+    this.queryCache.invalidateCategory('skills');
     // Use GraphDatabaseAdapter if available (AgentDB v2)
     if (this.graphBackend && 'storeSkill' in this.graphBackend) {
       const graphAdapter = this.graphBackend as any as GraphDatabaseAdapter;
@@ -74,17 +87,20 @@ export class SkillLibrary {
       const text = this.buildSkillText(skill);
       const embedding = await this.embedder.embed(text);
 
-      const nodeId = await graphAdapter.storeSkill({
-        id: skill.id ? `skill-${skill.id}` : `skill-${Date.now()}-${Math.random()}`,
-        name: skill.name,
-        description: skill.description || '',
-        code: skill.code || '',
-        usageCount: skill.uses ?? 0,
-        avgReward: skill.avgReward ?? 0,
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-        tags: JSON.stringify(skill.metadata || {})
-      }, embedding);
+      const nodeId = await graphAdapter.storeSkill(
+        {
+          id: skill.id ? `skill-${skill.id}` : `skill-${Date.now()}-${Math.random()}`,
+          name: skill.name,
+          description: skill.description || '',
+          code: skill.code || '',
+          usageCount: skill.uses ?? 0,
+          avgReward: skill.avgReward ?? 0,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+          tags: JSON.stringify(skill.metadata || {}),
+        },
+        embedding
+      );
 
       const numericId = parseInt(nodeId.split('-').pop() || '0', 36);
       NodeIdMapper.getInstance().register(numericId, nodeId);
@@ -125,16 +141,12 @@ export class SkillLibrary {
 
     // Store in VectorBackend with skill metadata (if available)
     if (this.vectorBackend) {
-      this.vectorBackend.insert(
-        `skill:${skillId}`,
-        embedding,
-        {
-          name: skill.name,
-          description: skill.description,
-          successRate: skill.successRate,
-          avgReward: skill.avgReward
-        }
-      );
+      this.vectorBackend.insert(`skill:${skillId}`, embedding, {
+        name: skill.name,
+        description: skill.description,
+        successRate: skill.successRate,
+        avgReward: skill.avgReward,
+      });
     } else {
       // Legacy: store in database
       this.storeSkillEmbeddingLegacy(skillId, embedding);
@@ -145,8 +157,11 @@ export class SkillLibrary {
 
   /**
    * Update skill statistics after use
+   * Invalidates skill cache
    */
   updateSkillStats(skillId: number, success: boolean, reward: number, latencyMs: number): void {
+    // Invalidate skills cache on update
+    this.queryCache.invalidateCategory('skills');
     const stmt = this.db.prepare(`
       UPDATE skills
       SET
@@ -176,6 +191,18 @@ export class SkillLibrary {
 
     const { k = 5, minSuccessRate = 0.5, preferRecent = true } = query;
 
+    // Check cache first
+    const cacheKey = this.queryCache.generateKey(
+      'retrieveSkills',
+      [task, k, minSuccessRate, preferRecent],
+      'skills'
+    );
+
+    const cached = this.queryCache.get<Skill[]>(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
     // Generate query embedding
     const queryEmbedding = await this.embedder.embed(task);
 
@@ -185,37 +212,43 @@ export class SkillLibrary {
 
       const searchResults = await graphAdapter.searchSkills(queryEmbedding, k);
 
-      return searchResults.map(result => {
-        // Handle metadata/tags parsing
-        let metadata: any = undefined;
-        if (result.tags) {
-          if (typeof result.tags === 'string') {
-            // Skip parsing if it's a String object representation
-            if (!result.tags.startsWith('String(')) {
-              try {
-                metadata = JSON.parse(result.tags);
-              } catch (e) {
-                // Invalid JSON, skip
-                metadata = undefined;
+      const results = searchResults
+        .map((result) => {
+          // Handle metadata/tags parsing
+          let metadata: any = undefined;
+          if (result.tags) {
+            if (typeof result.tags === 'string') {
+              // Skip parsing if it's a String object representation
+              if (!result.tags.startsWith('String(')) {
+                try {
+                  metadata = JSON.parse(result.tags);
+                } catch (e) {
+                  // Invalid JSON, skip
+                  metadata = undefined;
+                }
               }
+            } else {
+              // Already an object
+              metadata = result.tags;
             }
-          } else {
-            // Already an object
-            metadata = result.tags;
           }
-        }
 
-        return {
-          id: parseInt(result.id.split('-').pop() || '0', 36),
-          name: result.name,
-          description: result.description,
-          code: result.code,
-          successRate: result.avgReward, // Use avgReward as successRate proxy
-          uses: result.usageCount,
-          avgReward: result.avgReward,
-          metadata
-        };
-      }).filter(skill => skill.successRate >= minSuccessRate);
+          return {
+            id: parseInt(result.id.split('-').pop() || '0', 36),
+            name: result.name,
+            description: result.description,
+            code: result.code,
+            successRate: result.avgReward, // Use avgReward as successRate proxy
+            uses: result.usageCount,
+            avgReward: result.avgReward,
+            metadata,
+          };
+        })
+        .filter((skill) => skill.successRate >= minSuccessRate);
+
+      // Cache the results
+      this.queryCache.set(cacheKey, results);
+      return results;
     }
 
     // Use VectorBackend for semantic search (if available)
@@ -252,7 +285,7 @@ export class SkillLibrary {
           avgLatencyMs: row.avg_latency_ms,
           createdFromEpisode: row.created_from_episode ?? undefined,
           metadata: row.metadata ? JSON.parse(row.metadata) : undefined,
-          similarity: result.similarity
+          similarity: result.similarity,
         });
       }
 
@@ -263,7 +296,11 @@ export class SkillLibrary {
         return scoreB - scoreA;
       });
 
-      return skillsWithSimilarity.slice(0, k);
+      const results = skillsWithSimilarity.slice(0, k);
+
+      // Cache the results
+      this.queryCache.set(cacheKey, results);
+      return results;
     } else {
       // Legacy: use SQL-based similarity search
       return this.retrieveSkillsLegacy(query);
@@ -312,7 +349,7 @@ export class SkillLibrary {
         avgLatencyMs: row.avg_latency_ms,
         createdFromEpisode: row.created_from_episode ?? undefined,
         metadata: row.metadata ? JSON.parse(row.metadata) : undefined,
-        similarity
+        similarity,
       });
     }
 
@@ -437,12 +474,7 @@ export class SkillLibrary {
       avgReward: number;
     }>;
   }> {
-    const {
-      minAttempts = 3,
-      minReward = 0.7,
-      timeWindowDays = 7,
-      extractPatterns = true
-    } = config;
+    const { minAttempts = 3, minReward = 0.7, timeWindowDays = 7, extractPatterns = true } = config;
 
     interface ConsolidationCandidate {
       task: string;
@@ -501,7 +533,7 @@ export class SkillLibrary {
           task: candidate.task,
           commonPatterns: extractedPatterns,
           successIndicators: successIndicators,
-          avgReward: candidate.avg_reward
+          avgReward: candidate.avg_reward,
         });
       }
 
@@ -515,7 +547,7 @@ export class SkillLibrary {
           description: enhancedDescription,
           signature: {
             inputs: { task: 'string' },
-            outputs: { result: 'any' }
+            outputs: { result: 'any' },
           },
           successRate: candidate.success_rate,
           uses: candidate.attempt_count,
@@ -528,8 +560,11 @@ export class SkillLibrary {
             consolidatedAt: Date.now(),
             extractedPatterns: extractedPatterns,
             successIndicators: successIndicators,
-            patternConfidence: this.calculatePatternConfidence(episodeIds.length, candidate.success_rate)
-          }
+            patternConfidence: this.calculatePatternConfidence(
+              episodeIds.length,
+              candidate.success_rate
+            ),
+          },
         };
 
         await this.createSkill(skill);
@@ -557,12 +592,16 @@ export class SkillLibrary {
     successIndicators: string[];
   }> {
     // Retrieve episodes with their outputs and critiques
-    const episodes = this.db.prepare(`
+    const episodes = this.db
+      .prepare(
+        `
       SELECT id, task, input, output, critique, reward, success, metadata
       FROM episodes
       WHERE id IN (${episodeIds.map(() => '?').join(',')})
       AND success = 1
-    `).all(...episodeIds) as any[];
+    `
+      )
+      .all(...episodeIds) as any[];
 
     if (episodes.length === 0) {
       return { commonPatterns: [], successIndicators: [] };
@@ -572,9 +611,7 @@ export class SkillLibrary {
     const successIndicators: string[] = [];
 
     // Pattern 1: Analyze output text for common keywords and phrases
-    const outputTexts = episodes
-      .map(ep => ep.output)
-      .filter(Boolean);
+    const outputTexts = episodes.map((ep) => ep.output).filter(Boolean);
 
     if (outputTexts.length > 0) {
       const keywordFrequency = this.extractKeywordFrequency(outputTexts);
@@ -586,9 +623,7 @@ export class SkillLibrary {
     }
 
     // Pattern 2: Analyze critique patterns for successful strategies
-    const critiques = episodes
-      .map(ep => ep.critique)
-      .filter(Boolean);
+    const critiques = episodes.map((ep) => ep.critique).filter(Boolean);
 
     if (critiques.length > 0) {
       const critiqueKeywords = this.extractKeywordFrequency(critiques);
@@ -601,11 +636,13 @@ export class SkillLibrary {
 
     // Pattern 3: Analyze reward distribution
     const avgReward = episodes.reduce((sum, ep) => sum + ep.reward, 0) / episodes.length;
-    const highRewardCount = episodes.filter(ep => ep.reward > avgReward).length;
+    const highRewardCount = episodes.filter((ep) => ep.reward > avgReward).length;
     const highRewardRatio = highRewardCount / episodes.length;
 
     if (highRewardRatio > 0.6) {
-      successIndicators.push(`High consistency (${(highRewardRatio * 100).toFixed(0)}% above average)`);
+      successIndicators.push(
+        `High consistency (${(highRewardRatio * 100).toFixed(0)}% above average)`
+      );
     }
 
     // Pattern 4: Analyze metadata for common parameters
@@ -631,10 +668,46 @@ export class SkillLibrary {
 
     // Common stop words to filter out
     const stopWords = new Set([
-      'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for',
-      'of', 'with', 'by', 'from', 'as', 'is', 'was', 'are', 'were', 'been',
-      'be', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'should',
-      'could', 'may', 'might', 'must', 'can', 'this', 'that', 'these', 'those'
+      'the',
+      'a',
+      'an',
+      'and',
+      'or',
+      'but',
+      'in',
+      'on',
+      'at',
+      'to',
+      'for',
+      'of',
+      'with',
+      'by',
+      'from',
+      'as',
+      'is',
+      'was',
+      'are',
+      'were',
+      'been',
+      'be',
+      'have',
+      'has',
+      'had',
+      'do',
+      'does',
+      'did',
+      'will',
+      'would',
+      'should',
+      'could',
+      'may',
+      'might',
+      'must',
+      'can',
+      'this',
+      'that',
+      'these',
+      'those',
     ]);
 
     for (const text of texts) {
@@ -672,9 +745,8 @@ export class SkillLibrary {
     for (const episode of episodes) {
       if (episode.metadata) {
         try {
-          const metadata = typeof episode.metadata === 'string'
-            ? JSON.parse(episode.metadata)
-            : episode.metadata;
+          const metadata =
+            typeof episode.metadata === 'string' ? JSON.parse(episode.metadata) : episode.metadata;
 
           for (const [key, value] of Object.entries(metadata)) {
             if (!metadataFields.has(key)) {
@@ -709,11 +781,13 @@ export class SkillLibrary {
     // Sort by episode ID (temporal order)
     const sorted = [...episodes].sort((a, b) => a.id - b.id);
 
-    const firstHalfReward = sorted.slice(0, Math.floor(sorted.length / 2))
-      .reduce((sum, ep) => sum + ep.reward, 0) / Math.floor(sorted.length / 2);
+    const firstHalfReward =
+      sorted.slice(0, Math.floor(sorted.length / 2)).reduce((sum, ep) => sum + ep.reward, 0) /
+      Math.floor(sorted.length / 2);
 
-    const secondHalfReward = sorted.slice(Math.floor(sorted.length / 2))
-      .reduce((sum, ep) => sum + ep.reward, 0) / (sorted.length - Math.floor(sorted.length / 2));
+    const secondHalfReward =
+      sorted.slice(Math.floor(sorted.length / 2)).reduce((sum, ep) => sum + ep.reward, 0) /
+      (sorted.length - Math.floor(sorted.length / 2));
 
     const improvement = ((secondHalfReward - firstHalfReward) / firstHalfReward) * 100;
 
@@ -742,12 +816,9 @@ export class SkillLibrary {
 
   /**
    * Prune underperforming skills
+   * Invalidates cache on completion
    */
-  pruneSkills(config: {
-    minUses?: number;
-    minSuccessRate?: number;
-    maxAgeDays?: number;
-  }): number {
+  pruneSkills(config: { minUses?: number; minSuccessRate?: number; maxAgeDays?: number }): number {
     const { minUses = 3, minSuccessRate = 0.4, maxAgeDays = 60 } = config;
 
     const stmt = this.db.prepare(`
@@ -758,7 +829,46 @@ export class SkillLibrary {
     `);
 
     const result = stmt.run(minUses, minSuccessRate, maxAgeDays * 86400);
+
+    // Invalidate cache after pruning
+    if (result.changes > 0) {
+      this.queryCache.invalidateCategory('skills');
+    }
+
     return result.changes;
+  }
+
+  /**
+   * Get query cache statistics
+   */
+  getCacheStats() {
+    return this.queryCache.getStatistics();
+  }
+
+  /**
+   * Clear query cache
+   */
+  clearCache(): void {
+    this.queryCache.clear();
+  }
+
+  /**
+   * Prune expired cache entries
+   */
+  pruneCache(): number {
+    return this.queryCache.pruneExpired();
+  }
+
+  /**
+   * Warm cache with common skill queries
+   */
+  async warmCache(commonTasks: string[]): Promise<void> {
+    await this.queryCache.warm(async (cache) => {
+      // Pre-load common skill queries
+      for (const task of commonTasks) {
+        await this.retrieveSkills({ task, k: 5 });
+      }
+    });
   }
 
   // ========================================================================
@@ -784,7 +894,7 @@ export class SkillLibrary {
       avgReward: row.avg_reward,
       avgLatencyMs: row.avg_latency_ms,
       createdFromEpisode: row.created_from_episode,
-      metadata: row.metadata ? JSON.parse(row.metadata) : undefined
+      metadata: row.metadata ? JSON.parse(row.metadata) : undefined,
     };
   }
 

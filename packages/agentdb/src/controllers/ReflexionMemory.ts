@@ -16,6 +16,7 @@ import type { LearningBackend } from '../backends/LearningBackend.js';
 import type { GraphBackend, GraphNode } from '../backends/GraphBackend.js';
 import type { GraphDatabaseAdapter } from '../backends/graph/GraphDatabaseAdapter.js';
 import { NodeIdMapper } from '../utils/NodeIdMapper.js';
+import { QueryCache, type QueryCacheConfig } from '../core/QueryCache.js';
 
 export interface Episode {
   id?: number;
@@ -54,25 +55,32 @@ export class ReflexionMemory {
   private vectorBackend?: VectorBackend;
   private learningBackend?: LearningBackend;
   private graphBackend?: GraphBackend;
+  private queryCache: QueryCache;
 
   constructor(
     db: IDatabaseConnection,
     embedder: EmbeddingService,
     vectorBackend?: VectorBackend,
     learningBackend?: LearningBackend,
-    graphBackend?: GraphBackend
+    graphBackend?: GraphBackend,
+    cacheConfig?: QueryCacheConfig
   ) {
     this.db = db;
     this.embedder = embedder;
     this.vectorBackend = vectorBackend;
     this.learningBackend = learningBackend;
     this.graphBackend = graphBackend;
+    this.queryCache = new QueryCache(cacheConfig);
   }
 
   /**
    * Store a new episode with its critique and outcome
+   * Invalidates relevant cache entries
    */
   async storeEpisode(episode: Episode): Promise<number> {
+    // Invalidate episode caches on write
+    this.queryCache.invalidateCategory('episodes');
+    this.queryCache.invalidateCategory('task-stats');
     // Use GraphDatabaseAdapter if available (AgentDB v2)
     if (this.graphBackend && 'storeEpisode' in this.graphBackend) {
       // GraphDatabaseAdapter has specialized storeEpisode method
@@ -82,19 +90,22 @@ export class ReflexionMemory {
       const taskEmbedding = await this.embedder.embed(episode.task);
 
       // Create episode node using GraphDatabaseAdapter
-      const nodeId = await graphAdapter.storeEpisode({
-        id: episode.id ? `episode-${episode.id}` : `episode-${Date.now()}-${Math.random()}`,
-        sessionId: episode.sessionId,
-        task: episode.task,
-        reward: episode.reward,
-        success: episode.success,
-        input: episode.input,
-        output: episode.output,
-        critique: episode.critique,
-        createdAt: episode.ts ? episode.ts * 1000 : Date.now(),
-        tokensUsed: episode.tokensUsed,
-        latencyMs: episode.latencyMs
-      }, taskEmbedding);
+      const nodeId = await graphAdapter.storeEpisode(
+        {
+          id: episode.id ? `episode-${episode.id}` : `episode-${Date.now()}-${Math.random()}`,
+          sessionId: episode.sessionId,
+          task: episode.task,
+          reward: episode.reward,
+          success: episode.success,
+          input: episode.input,
+          output: episode.output,
+          critique: episode.critique,
+          createdAt: episode.ts ? episode.ts * 1000 : Date.now(),
+          tokensUsed: episode.tokensUsed,
+          latencyMs: episode.latencyMs,
+        },
+        taskEmbedding
+      );
 
       // Return a numeric ID (parse from string ID)
       const numericId = parseInt(nodeId.split('-').pop() || '0', 36);
@@ -111,29 +122,26 @@ export class ReflexionMemory {
       const taskEmbedding = await this.embedder.embed(episode.task);
 
       // Create episode node ID
-      const nodeId = await this.graphBackend.createNode(
-        ['Episode'],
-        {
-          sessionId: episode.sessionId,
-          task: episode.task,
-          input: episode.input || '',
-          output: episode.output || '',
-          critique: episode.critique || '',
-          reward: episode.reward,
-          success: episode.success,
-          latencyMs: episode.latencyMs || 0,
-          tokensUsed: episode.tokensUsed || 0,
-          tags: episode.tags ? JSON.stringify(episode.tags) : '[]',
-          metadata: episode.metadata ? JSON.stringify(episode.metadata) : '{}',
-          createdAt: Date.now()
-        }
-      );
+      const nodeId = await this.graphBackend.createNode(['Episode'], {
+        sessionId: episode.sessionId,
+        task: episode.task,
+        input: episode.input || '',
+        output: episode.output || '',
+        critique: episode.critique || '',
+        reward: episode.reward,
+        success: episode.success,
+        latencyMs: episode.latencyMs || 0,
+        tokensUsed: episode.tokensUsed || 0,
+        tags: episode.tags ? JSON.stringify(episode.tags) : '[]',
+        metadata: episode.metadata ? JSON.stringify(episode.metadata) : '{}',
+        createdAt: Date.now(),
+      });
 
       // Store embedding using vectorBackend if available
       if (this.vectorBackend && taskEmbedding) {
         this.vectorBackend.insert(nodeId, taskEmbedding, {
           type: 'episode',
-          sessionId: episode.sessionId
+          sessionId: episode.sessionId,
         });
       }
 
@@ -200,8 +208,8 @@ export class ReflexionMemory {
           task: episode.task,
           sessionId: episode.sessionId,
           latencyMs: episode.latencyMs,
-          tokensUsed: episode.tokensUsed
-        }
+          tokensUsed: episode.tokensUsed,
+        },
       });
     }
 
@@ -210,6 +218,7 @@ export class ReflexionMemory {
 
   /**
    * Retrieve relevant past episodes for a new task attempt
+   * Results are cached for improved performance
    */
   async retrieveRelevant(query: ReflexionQuery): Promise<EpisodeWithEmbedding[]> {
     const {
@@ -219,10 +228,50 @@ export class ReflexionMemory {
       minReward,
       onlyFailures = false,
       onlySuccesses = false,
-      timeWindowDays
+      timeWindowDays,
     } = query;
 
-    // Generate query embedding
+    // Check cache first
+    const cacheKey = this.queryCache.generateKey(
+      'retrieveRelevant',
+      [task, currentState, k, minReward, onlyFailures, onlySuccesses, timeWindowDays],
+      'episodes'
+    );
+
+    const cached = this.queryCache.get<EpisodeWithEmbedding[]>(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
+    // Generate and enhance query embedding
+    const queryEmbedding = await this.prepareQueryEmbedding(task, currentState, k);
+
+    // Try different retrieval strategies in order of preference
+    let episodes: EpisodeWithEmbedding[] = [];
+
+    if (this.graphBackend && 'searchSimilarEpisodes' in this.graphBackend) {
+      episodes = await this.retrieveFromGraphAdapter(queryEmbedding, query);
+    } else if (this.graphBackend && 'execute' in this.graphBackend) {
+      episodes = await this.retrieveFromGenericGraph(query);
+    } else if (this.vectorBackend) {
+      episodes = await this.retrieveFromVectorBackend(queryEmbedding, query);
+    } else {
+      episodes = await this.retrieveFromSQLFallback(queryEmbedding, query);
+    }
+
+    // Cache and return results
+    this.queryCache.set(cacheKey, episodes);
+    return episodes;
+  }
+
+  /**
+   * Prepare and enhance query embedding for search
+   */
+  private async prepareQueryEmbedding(
+    task: string,
+    currentState: string,
+    k: number
+  ): Promise<Float32Array> {
     const queryText = currentState ? `${task}\n${currentState}` : task;
     let queryEmbedding = await this.embedder.embed(queryText);
 
@@ -231,145 +280,199 @@ export class ReflexionMemory {
       queryEmbedding = await this.enhanceQueryWithGNN(queryEmbedding, k);
     }
 
-    // Use GraphDatabaseAdapter if available (AgentDB v2)
-    if (this.graphBackend && 'searchSimilarEpisodes' in this.graphBackend) {
-      const graphAdapter = this.graphBackend as any as GraphDatabaseAdapter;
+    return queryEmbedding;
+  }
 
-      // Search using vector similarity
-      const results = await graphAdapter.searchSimilarEpisodes(queryEmbedding, k * 3);
+  /**
+   * Retrieve episodes using GraphDatabaseAdapter (AgentDB v2)
+   */
+  private async retrieveFromGraphAdapter(
+    queryEmbedding: Float32Array,
+    query: ReflexionQuery
+  ): Promise<EpisodeWithEmbedding[]> {
+    const { k = 5, minReward, onlyFailures, onlySuccesses, timeWindowDays } = query;
+    const graphAdapter = this.graphBackend as any as GraphDatabaseAdapter;
+
+    // Search using vector similarity
+    const results = await graphAdapter.searchSimilarEpisodes(queryEmbedding, k * 3);
+
+    // Apply filters
+    const filtered = this.applyEpisodeFilters(results, {
+      minReward,
+      onlyFailures,
+      onlySuccesses,
+      timeWindowDays,
+    });
+
+    // Convert to EpisodeWithEmbedding format
+    return filtered.slice(0, k).map((ep: any) => this.convertGraphEpisode(ep));
+  }
+
+  /**
+   * Retrieve episodes using generic GraphBackend
+   */
+  private async retrieveFromGenericGraph(query: ReflexionQuery): Promise<EpisodeWithEmbedding[]> {
+    const { k = 5 } = query;
+    const cypherQuery = this.buildCypherQuery(query);
+    const result = await this.graphBackend!.execute(cypherQuery);
+
+    // Convert to EpisodeWithEmbedding format
+    const episodes: EpisodeWithEmbedding[] = result.rows.map((row: any) =>
+      this.convertCypherEpisode(row.e)
+    );
+
+    return episodes.slice(0, k);
+  }
+
+  /**
+   * Retrieve episodes using VectorBackend (150x faster)
+   */
+  private async retrieveFromVectorBackend(
+    queryEmbedding: Float32Array,
+    query: ReflexionQuery
+  ): Promise<EpisodeWithEmbedding[]> {
+    const { k = 5, minReward, onlyFailures, onlySuccesses, timeWindowDays } = query;
+
+    // Get candidates from vector backend
+    const searchResults = this.vectorBackend!.search(queryEmbedding, k * 3, {
+      threshold: 0.0,
+    });
+
+    // Fetch full episode data from DB
+    const episodeIds = searchResults.map((r) => parseInt(r.id));
+    if (episodeIds.length === 0) {
+      return [];
+    }
+
+    const rows = this.fetchEpisodesByIds(episodeIds);
+    const episodeMap = new Map(rows.map((r) => [r.id.toString(), r]));
+
+    // Map results with similarity scores and apply filters
+    const episodes: EpisodeWithEmbedding[] = [];
+
+    for (const result of searchResults) {
+      const row = episodeMap.get(result.id);
+      if (!row) continue;
 
       // Apply filters
-      const filtered = results.filter((ep: any) => {
-        if (minReward !== undefined && ep.reward < minReward) return false;
-        if (onlyFailures && ep.success) return false;
-        if (onlySuccesses && !ep.success) return false;
-        if (timeWindowDays && ep.createdAt < (Date.now() - timeWindowDays * 86400000)) return false;
-        return true;
-      });
+      if (
+        !this.passesEpisodeFilters(row, { minReward, onlyFailures, onlySuccesses, timeWindowDays })
+      ) {
+        continue;
+      }
 
-      // Convert to EpisodeWithEmbedding format
-      const episodes: EpisodeWithEmbedding[] = filtered.slice(0, k).map((ep: any) => ({
-        id: parseInt(ep.id.split('-').pop() || '0', 36),
-        sessionId: ep.sessionId,
-        task: ep.task,
-        input: ep.input,
-        output: ep.output,
-        critique: ep.critique,
-        reward: ep.reward,
-        success: ep.success,
-        latencyMs: ep.latencyMs,
-        tokensUsed: ep.tokensUsed,
-        ts: Math.floor(ep.createdAt / 1000)
-      }));
+      episodes.push(this.convertDatabaseEpisode(row, result.similarity));
 
-      return episodes;
+      if (episodes.length >= k) break;
     }
 
-    // Use generic GraphBackend if available
-    if (this.graphBackend && 'execute' in this.graphBackend) {
-      // Build Cypher query with filters
-      let cypherQuery = 'MATCH (e:Episode) WHERE 1=1';
+    return episodes;
+  }
 
-      if (minReward !== undefined) {
-        cypherQuery += ` AND e.reward >= ${minReward}`;
-      }
-      if (onlyFailures) {
-        cypherQuery += ` AND e.success = false`;
-      }
-      if (onlySuccesses) {
-        cypherQuery += ` AND e.success = true`;
-      }
-      if (timeWindowDays) {
-        const cutoff = Date.now() - timeWindowDays * 86400000;
-        cypherQuery += ` AND e.createdAt >= ${cutoff}`;
-      }
+  /**
+   * Retrieve episodes using SQL-based similarity search (fallback)
+   */
+  private async retrieveFromSQLFallback(
+    queryEmbedding: Float32Array,
+    query: ReflexionQuery
+  ): Promise<EpisodeWithEmbedding[]> {
+    const { k = 5 } = query;
+    const { whereClause, params } = this.buildSQLFilters(query);
 
-      cypherQuery += ` RETURN e LIMIT ${k * 3}`;
+    const stmt = this.db.prepare<DatabaseRows.Episode & { embedding: Buffer }>(`
+      SELECT e.*, ee.embedding
+      FROM episodes e
+      JOIN episode_embeddings ee ON e.id = ee.episode_id
+      ${whereClause}
+      ORDER BY e.reward DESC
+    `);
 
-      const result = await this.graphBackend.execute(cypherQuery);
+    const rows = stmt.all(...params);
 
-      // Convert to EpisodeWithEmbedding format
-      const episodes: EpisodeWithEmbedding[] = result.rows.map((row: any) => {
-        const node = row.e;
-        return {
-          id: parseInt(node.id.split('-').pop() || '0', 36),
-          sessionId: node.properties.sessionId,
-          task: node.properties.task,
-          input: node.properties.input,
-          output: node.properties.output,
-          critique: node.properties.critique,
-          reward: typeof node.properties.reward === 'string' ? parseFloat(node.properties.reward) : node.properties.reward,
-          success: typeof node.properties.success === 'string' ? node.properties.success === 'true' : node.properties.success,
-          latencyMs: node.properties.latencyMs,
-          tokensUsed: node.properties.tokensUsed,
-          tags: node.properties.tags ? JSON.parse(node.properties.tags) : [],
-          metadata: node.properties.metadata ? JSON.parse(node.properties.metadata) : {},
-          ts: Math.floor(node.properties.createdAt / 1000)
-        };
-      });
+    // Calculate similarities and convert
+    const episodes: EpisodeWithEmbedding[] = rows.map((row) => {
+      const embedding = this.deserializeEmbedding(row.embedding);
+      const similarity = this.cosineSimilarity(queryEmbedding, embedding);
+      return this.convertDatabaseEpisode(row, similarity, embedding);
+    });
 
-      return episodes.slice(0, k);
+    // Sort by similarity and return top-k
+    episodes.sort((a, b) => (b.similarity || 0) - (a.similarity || 0));
+    return episodes.slice(0, k);
+  }
+
+  /**
+   * Apply episode filters to search results
+   */
+  private applyEpisodeFilters(
+    episodes: any[],
+    filters: {
+      minReward?: number;
+      onlyFailures?: boolean;
+      onlySuccesses?: boolean;
+      timeWindowDays?: number;
+    }
+  ): any[] {
+    return episodes.filter((ep) => {
+      if (filters.minReward !== undefined && ep.reward < filters.minReward) return false;
+      if (filters.onlyFailures && ep.success) return false;
+      if (filters.onlySuccesses && !ep.success) return false;
+      if (filters.timeWindowDays && ep.createdAt < Date.now() - filters.timeWindowDays * 86400000)
+        return false;
+      return true;
+    });
+  }
+
+  /**
+   * Check if database row passes episode filters
+   */
+  private passesEpisodeFilters(
+    row: DatabaseRows.Episode,
+    filters: {
+      minReward?: number;
+      onlyFailures?: boolean;
+      onlySuccesses?: boolean;
+      timeWindowDays?: number;
+    }
+  ): boolean {
+    if (filters.minReward !== undefined && row.reward < filters.minReward) return false;
+    if (filters.onlyFailures && row.success === 1) return false;
+    if (filters.onlySuccesses && row.success === 0) return false;
+    if (filters.timeWindowDays && row.ts < Date.now() / 1000 - filters.timeWindowDays * 86400)
+      return false;
+    return true;
+  }
+
+  /**
+   * Build Cypher query with filters
+   */
+  private buildCypherQuery(query: ReflexionQuery): string {
+    const { k = 5, minReward, onlyFailures, onlySuccesses, timeWindowDays } = query;
+    let cypherQuery = 'MATCH (e:Episode) WHERE 1=1';
+
+    if (minReward !== undefined) {
+      cypherQuery += ` AND e.reward >= ${minReward}`;
+    }
+    if (onlyFailures) {
+      cypherQuery += ` AND e.success = false`;
+    }
+    if (onlySuccesses) {
+      cypherQuery += ` AND e.success = true`;
+    }
+    if (timeWindowDays) {
+      const cutoff = Date.now() - timeWindowDays * 86400000;
+      cypherQuery += ` AND e.createdAt >= ${cutoff}`;
     }
 
-    // Use optimized vector backend if available (150x faster)
-    if (this.vectorBackend) {
-      // Get candidates from vector backend
-      const searchResults = this.vectorBackend.search(queryEmbedding, k * 3, {
-        threshold: 0.0
-      });
+    cypherQuery += ` RETURN e LIMIT ${k * 3}`;
+    return cypherQuery;
+  }
 
-      // Fetch full episode data from DB
-      const episodeIds = searchResults.map(r => parseInt(r.id));
-      if (episodeIds.length === 0) {
-        return [];
-      }
-
-      const placeholders = episodeIds.map(() => '?').join(',');
-      const stmt = this.db.prepare<DatabaseRows.Episode>(`
-        SELECT * FROM episodes
-        WHERE id IN (${placeholders})
-      `);
-
-      const rows = stmt.all(...episodeIds);
-      const episodeMap = new Map(rows.map(r => [r.id.toString(), r]));
-
-      // Map results back with similarity scores and apply filters
-      const episodes: EpisodeWithEmbedding[] = [];
-
-      for (const result of searchResults) {
-        const row = episodeMap.get(result.id);
-        if (!row) continue;
-
-        // Apply additional filters
-        if (minReward !== undefined && row.reward < minReward) continue;
-        if (onlyFailures && row.success === 1) continue;
-        if (onlySuccesses && row.success === 0) continue;
-        if (timeWindowDays && row.ts < (Date.now() / 1000 - timeWindowDays * 86400)) continue;
-
-        episodes.push({
-          id: row.id,
-          ts: row.ts,
-          sessionId: row.session_id,
-          task: row.task,
-          input: row.input ?? undefined,
-          output: row.output ?? undefined,
-          critique: row.critique ?? undefined,
-          reward: row.reward,
-          success: row.success === 1,
-          latencyMs: row.latency_ms ?? undefined,
-          tokensUsed: row.tokens_used ?? undefined,
-          tags: row.tags ? JSON.parse(row.tags) : undefined,
-          metadata: row.metadata ? JSON.parse(row.metadata) : undefined,
-          similarity: result.similarity
-        });
-
-        if (episodes.length >= k) break;
-      }
-
-      return episodes;
-    }
-
-    // Fallback to SQL-based similarity search
+  /**
+   * Build SQL WHERE clause and parameters for filters
+   */
+  private buildSQLFilters(query: ReflexionQuery): { whereClause: string; params: any[] } {
+    const { minReward, onlyFailures, onlySuccesses, timeWindowDays } = query;
     const filters: string[] = [];
     const params: any[] = [];
 
@@ -392,58 +495,125 @@ export class ReflexionMemory {
     }
 
     const whereClause = filters.length > 0 ? `WHERE ${filters.join(' AND ')}` : '';
-
-    const stmt = this.db.prepare<DatabaseRows.Episode & { embedding: Buffer }>(`
-      SELECT
-        e.*,
-        ee.embedding
-      FROM episodes e
-      JOIN episode_embeddings ee ON e.id = ee.episode_id
-      ${whereClause}
-      ORDER BY e.reward DESC
-    `);
-
-    const rows = stmt.all(...params);
-
-    // Calculate similarities manually
-    const episodes: EpisodeWithEmbedding[] = rows.map(row => {
-      const embedding = this.deserializeEmbedding(row.embedding);
-      const similarity = this.cosineSimilarity(queryEmbedding, embedding);
-
-      return {
-        id: row.id,
-        ts: row.ts,
-        sessionId: row.session_id,
-        task: row.task,
-        input: row.input ?? undefined,
-        output: row.output ?? undefined,
-        critique: row.critique ?? undefined,
-        reward: row.reward,
-        success: row.success === 1,
-        latencyMs: row.latency_ms ?? undefined,
-        tokensUsed: row.tokens_used ?? undefined,
-        tags: row.tags ? JSON.parse(row.tags) : undefined,
-        metadata: row.metadata ? JSON.parse(row.metadata) : undefined,
-        embedding,
-        similarity
-      };
-    });
-
-    // Sort by similarity and return top-k
-    episodes.sort((a, b) => (b.similarity || 0) - (a.similarity || 0));
-    return episodes.slice(0, k);
+    return { whereClause, params };
   }
 
   /**
-   * Get statistics for a task
+   * Fetch episodes by IDs from database
    */
-  getTaskStats(task: string, timeWindowDays?: number): {
+  private fetchEpisodesByIds(episodeIds: number[]): DatabaseRows.Episode[] {
+    const placeholders = episodeIds.map(() => '?').join(',');
+    const stmt = this.db.prepare<DatabaseRows.Episode>(`
+      SELECT * FROM episodes
+      WHERE id IN (${placeholders})
+    `);
+    return stmt.all(...episodeIds);
+  }
+
+  /**
+   * Convert GraphDatabaseAdapter episode to EpisodeWithEmbedding
+   */
+  private convertGraphEpisode(ep: any): EpisodeWithEmbedding {
+    return {
+      id: parseInt(ep.id.split('-').pop() || '0', 36),
+      sessionId: ep.sessionId,
+      task: ep.task,
+      input: ep.input,
+      output: ep.output,
+      critique: ep.critique,
+      reward: ep.reward,
+      success: ep.success,
+      latencyMs: ep.latencyMs,
+      tokensUsed: ep.tokensUsed,
+      ts: Math.floor(ep.createdAt / 1000),
+    };
+  }
+
+  /**
+   * Convert Cypher query result to EpisodeWithEmbedding
+   */
+  private convertCypherEpisode(node: any): EpisodeWithEmbedding {
+    return {
+      id: parseInt(node.id.split('-').pop() || '0', 36),
+      sessionId: node.properties.sessionId,
+      task: node.properties.task,
+      input: node.properties.input,
+      output: node.properties.output,
+      critique: node.properties.critique,
+      reward:
+        typeof node.properties.reward === 'string'
+          ? parseFloat(node.properties.reward)
+          : node.properties.reward,
+      success:
+        typeof node.properties.success === 'string'
+          ? node.properties.success === 'true'
+          : node.properties.success,
+      latencyMs: node.properties.latencyMs,
+      tokensUsed: node.properties.tokensUsed,
+      tags: node.properties.tags ? JSON.parse(node.properties.tags) : [],
+      metadata: node.properties.metadata ? JSON.parse(node.properties.metadata) : {},
+      ts: Math.floor(node.properties.createdAt / 1000),
+    };
+  }
+
+  /**
+   * Convert database row to EpisodeWithEmbedding
+   */
+  private convertDatabaseEpisode(
+    row: DatabaseRows.Episode,
+    similarity?: number,
+    embedding?: Float32Array
+  ): EpisodeWithEmbedding {
+    return {
+      id: row.id,
+      ts: row.ts,
+      sessionId: row.session_id,
+      task: row.task,
+      input: row.input ?? undefined,
+      output: row.output ?? undefined,
+      critique: row.critique ?? undefined,
+      reward: row.reward,
+      success: row.success === 1,
+      latencyMs: row.latency_ms ?? undefined,
+      tokensUsed: row.tokens_used ?? undefined,
+      tags: row.tags ? JSON.parse(row.tags) : undefined,
+      metadata: row.metadata ? JSON.parse(row.metadata) : undefined,
+      embedding,
+      similarity,
+    };
+  }
+
+  /**
+   * Get statistics for a task (cached)
+   */
+  getTaskStats(
+    task: string,
+    timeWindowDays?: number
+  ): {
     totalAttempts: number;
     successRate: number;
     avgReward: number;
     avgLatency: number;
     improvementTrend: number;
   } {
+    // Check cache first
+    const cacheKey = this.queryCache.generateKey(
+      'getTaskStats',
+      [task, timeWindowDays],
+      'task-stats'
+    );
+
+    const cached = this.queryCache.get<{
+      totalAttempts: number;
+      successRate: number;
+      avgReward: number;
+      avgLatency: number;
+      improvementTrend: number;
+    }>(cacheKey);
+
+    if (cached) {
+      return cached;
+    }
     const windowFilter = timeWindowDays
       ? `AND ts > strftime('%s', 'now') - ${timeWindowDays * 86400}`
       : '';
@@ -481,27 +651,43 @@ export class ReflexionMemory {
     `);
 
     const trend = trendStmt.get(task) as any;
-    const improvementTrend = trend.recent_reward && trend.older_reward
-      ? (trend.recent_reward - trend.older_reward) / trend.older_reward
-      : 0;
+    const improvementTrend =
+      trend.recent_reward && trend.older_reward
+        ? (trend.recent_reward - trend.older_reward) / trend.older_reward
+        : 0;
 
-    return {
+    const results = {
       totalAttempts: stats?.total ?? 0,
       successRate: stats?.success_rate ?? 0,
       avgReward: stats?.avg_reward ?? 0,
       avgLatency: stats?.avg_latency ?? 0,
-      improvementTrend
+      improvementTrend,
     };
+
+    // Cache the results
+    this.queryCache.set(cacheKey, results);
+    return results;
   }
 
   /**
-   * Build critique summary from similar failed episodes
+   * Build critique summary from similar failed episodes (cached)
    */
   async getCritiqueSummary(query: ReflexionQuery): Promise<string> {
+    // Check cache first
+    const cacheKey = this.queryCache.generateKey(
+      'getCritiqueSummary',
+      [query.task, query.k],
+      'episodes'
+    );
+
+    const cached = this.queryCache.get<string>(cacheKey);
+    if (cached) {
+      return cached;
+    }
     const failures = await this.retrieveRelevant({
       ...query,
       onlyFailures: true,
-      k: 3
+      k: 3,
     });
 
     if (failures.length === 0) {
@@ -509,22 +695,37 @@ export class ReflexionMemory {
     }
 
     const critiques = failures
-      .filter(ep => ep.critique)
+      .filter((ep) => ep.critique)
       .map((ep, i) => `${i + 1}. ${ep.critique} (reward: ${ep.reward.toFixed(2)})`)
       .join('\n');
 
-    return `Prior failures and lessons learned:\n${critiques}`;
+    const result = `Prior failures and lessons learned:\n${critiques}`;
+
+    // Cache the result
+    this.queryCache.set(cacheKey, result);
+    return result;
   }
 
   /**
-   * Get successful strategies for a task
+   * Get successful strategies for a task (cached)
    */
   async getSuccessStrategies(query: ReflexionQuery): Promise<string> {
+    // Check cache first
+    const cacheKey = this.queryCache.generateKey(
+      'getSuccessStrategies',
+      [query.task, query.k],
+      'episodes'
+    );
+
+    const cached = this.queryCache.get<string>(cacheKey);
+    if (cached) {
+      return cached;
+    }
     const successes = await this.retrieveRelevant({
       ...query,
       onlySuccesses: true,
       minReward: 0.7,
-      k: 3
+      k: 3,
     });
 
     if (successes.length === 0) {
@@ -538,7 +739,11 @@ export class ReflexionMemory {
       })
       .join('\n');
 
-    return `Successful strategies:\n${strategies}`;
+    const result = `Successful strategies:\n${strategies}`;
+
+    // Cache the result
+    this.queryCache.set(cacheKey, result);
+    return result;
   }
 
   /**
@@ -554,7 +759,7 @@ export class ReflexionMemory {
 
     const rows = stmt.all(sessionId, limit);
 
-    return rows.map(row => ({
+    return rows.map((row) => ({
       id: row.id,
       ts: row.ts,
       sessionId: row.session_id,
@@ -567,12 +772,13 @@ export class ReflexionMemory {
       latencyMs: row.latency_ms ?? undefined,
       tokensUsed: row.tokens_used ?? undefined,
       tags: row.tags ? JSON.parse(row.tags) : undefined,
-      metadata: row.metadata ? JSON.parse(row.metadata) : undefined
+      metadata: row.metadata ? JSON.parse(row.metadata) : undefined,
     }));
   }
 
   /**
    * Prune low-quality episodes based on TTL and quality threshold
+   * Invalidates cache on completion
    */
   pruneEpisodes(config: {
     minReward?: number;
@@ -599,6 +805,13 @@ export class ReflexionMemory {
     `);
 
     const result = stmt.run(minReward, maxAgeDays * 86400, keepMinPerTask);
+
+    // Invalidate caches after pruning
+    if (result.changes > 0) {
+      this.queryCache.invalidateCategory('episodes');
+      this.queryCache.invalidateCategory('task-stats');
+    }
+
     return result.changes;
   }
 
@@ -673,7 +886,7 @@ export class ReflexionMemory {
         success: episode.success,
         timestamp: episode.ts || Date.now(),
         latencyMs: episode.latencyMs,
-        tokensUsed: episode.tokensUsed
+        tokensUsed: episode.tokensUsed,
       }
     );
 
@@ -683,18 +896,10 @@ export class ReflexionMemory {
     // Create similarity relationships to similar episodes
     for (const similar of similarEpisodes) {
       if (similar.id !== nodeId && similar.properties.episodeId !== episodeId) {
-        await this.graphBackend.createRelationship(
-          nodeId,
-          similar.id,
-          'SIMILAR_TO',
-          {
-            similarity: this.cosineSimilarity(
-              embedding,
-              similar.embedding || new Float32Array()
-            ),
-            createdAt: Date.now()
-          }
-        );
+        await this.graphBackend.createRelationship(nodeId, similar.id, 'SIMILAR_TO', {
+          similarity: this.cosineSimilarity(embedding, similar.embedding || new Float32Array()),
+          createdAt: Date.now(),
+        });
       }
     }
 
@@ -707,23 +912,17 @@ export class ReflexionMemory {
     let sessionNodeId: string;
     if (sessionNodes.rows.length === 0) {
       // Create session node if doesn't exist
-      sessionNodeId = await this.graphBackend.createNode(
-        ['Session'],
-        {
-          sessionId: episode.sessionId,
-          startTime: episode.ts || Date.now()
-        }
-      );
+      sessionNodeId = await this.graphBackend.createNode(['Session'], {
+        sessionId: episode.sessionId,
+        startTime: episode.ts || Date.now(),
+      });
     } else {
       sessionNodeId = sessionNodes.rows[0].s.id;
     }
 
-    await this.graphBackend.createRelationship(
-      nodeId,
-      sessionNodeId,
-      'BELONGS_TO_SESSION',
-      { timestamp: episode.ts || Date.now() }
-    );
+    await this.graphBackend.createRelationship(nodeId, sessionNodeId, 'BELONGS_TO_SESSION', {
+      timestamp: episode.ts || Date.now(),
+    });
 
     // If episode has critique, create causal relationship to previous failures
     if (episode.critique && !episode.success) {
@@ -737,15 +936,10 @@ export class ReflexionMemory {
       );
 
       for (const prevFailure of previousFailures.rows) {
-        await this.graphBackend.createRelationship(
-          nodeId,
-          prevFailure.e.id,
-          'LEARNED_FROM',
-          {
-            critique: episode.critique,
-            improvementAttempt: true
-          }
-        );
+        await this.graphBackend.createRelationship(nodeId, prevFailure.e.id, 'LEARNED_FROM', {
+          critique: episode.critique,
+          improvementAttempt: true,
+        });
       }
     }
   }
@@ -764,7 +958,7 @@ export class ReflexionMemory {
     try {
       // Get initial neighbors
       const initialResults = this.vectorBackend.search(queryEmbedding, k * 2, {
-        threshold: 0.0
+        threshold: 0.0,
       });
 
       if (initialResults.length === 0) {
@@ -775,14 +969,18 @@ export class ReflexionMemory {
       const neighborEmbeddings: Float32Array[] = [];
       const weights: number[] = [];
 
-      const episodeIds = initialResults.map(r => r.id);
+      const episodeIds = initialResults.map((r) => r.id);
       const placeholders = episodeIds.map(() => '?').join(',');
-      const episodes = this.db.prepare(`
+      const episodes = this.db
+        .prepare(
+          `
         SELECT ee.embedding, e.reward
         FROM episode_embeddings ee
         JOIN episodes e ON e.id = ee.episode_id
         WHERE ee.episode_id IN (${placeholders})
-      `).all(...episodeIds) as any[];
+      `
+        )
+        .all(...episodeIds) as any[];
 
       for (const ep of episodes) {
         const embedding = this.deserializeEmbedding(ep.embedding);
@@ -792,11 +990,7 @@ export class ReflexionMemory {
       }
 
       // Enhance query using GNN
-      const enhanced = this.learningBackend.enhance(
-        queryEmbedding,
-        neighborEmbeddings,
-        weights
-      );
+      const enhanced = this.learningBackend.enhance(queryEmbedding, neighborEmbeddings, weights);
 
       return enhanced;
     } catch (error) {
@@ -836,7 +1030,7 @@ export class ReflexionMemory {
     return {
       similar: (row.similar || []).filter((id: any) => id != null),
       session: row.session || '',
-      learnedFrom: (row.learnedFrom || []).filter((id: any) => id != null)
+      learnedFrom: (row.learnedFrom || []).filter((id: any) => id != null),
     };
   }
 
@@ -860,7 +1054,7 @@ export class ReflexionMemory {
       epochs: result.epochs,
       finalLoss: result.finalLoss.toFixed(4),
       improvement: `${(result.improvement * 100).toFixed(1)}%`,
-      duration: `${result.duration}ms`
+      duration: `${result.duration}ms`,
     });
   }
 
@@ -882,5 +1076,39 @@ export class ReflexionMemory {
       return null;
     }
     return this.graphBackend.getStats();
+  }
+
+  /**
+   * Get query cache statistics
+   */
+  getCacheStats() {
+    return this.queryCache.getStatistics();
+  }
+
+  /**
+   * Clear query cache
+   */
+  clearCache(): void {
+    this.queryCache.clear();
+  }
+
+  /**
+   * Prune expired cache entries
+   */
+  pruneCache(): number {
+    return this.queryCache.pruneExpired();
+  }
+
+  /**
+   * Warm cache with common queries
+   */
+  async warmCache(sessionId?: string): Promise<void> {
+    await this.queryCache.warm(async (cache) => {
+      // Warm cache with recent sessions if sessionId provided
+      if (sessionId) {
+        const recent = await this.getRecentEpisodes(sessionId, 10);
+        // Episodes are already loaded, cache will be populated on next access
+      }
+    });
   }
 }

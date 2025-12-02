@@ -1,0 +1,114 @@
+[
+  {
+    "file": "src/mcp/agentdb-mcp-server.ts",
+    "method": "switch",
+    "startLine": 896,
+    "endLine": 2265,
+    "length": 1370
+  },
+  {
+    "file": "src/cli/agentdb-cli.ts",
+    "method": "main",
+    "startLine": 1019,
+    "endLine": 1304,
+    "length": 286
+  },
+  {
+    "file": "src/cli/agentdb-cli.ts",
+    "method": "printHelp",
+    "startLine": 2407,
+    "endLine": 2692,
+    "length": 286
+  },
+  {
+    "file": "src/cli/lib/report-generator.ts",
+    "method": "generateHTML",
+    "startLine": 132,
+    "endLine": 415,
+    "length": 284
+  },
+  {
+    "file": "src/controllers/ReflexionMemory.ts",
+    "method": "retrieveRelevant",
+    "startLine": 223,
+    "endLine": 466,
+    "length": 244
+  },
+  {
+    "file": "src/cli/lib/help-formatter.ts",
+    "method": "formatScenarioHelp",
+    "startLine": 77,
+    "endLine": 300,
+    "length": 224
+  },
+  {
+    "file": "src/db-fallback.ts",
+    "method": "createSqlJsWrapper",
+    "startLine": 52,
+    "endLine": 271,
+    "length": 220
+  },
+  {
+    "file": "src/types/database.types.ts",
+    "method": "get",
+    "startLine": 23,
+    "endLine": 207,
+    "length": 185
+  },
+  {
+    "file": "src/examples/quic-sync-example.ts",
+    "method": "exampleQUICSync",
+    "startLine": 18,
+    "endLine": 186,
+    "length": 169
+  },
+  {
+    "file": "src/cli/commands/simulate-wizard.ts",
+    "method": "scenarioWizard",
+    "startLine": 49,
+    "endLine": 213,
+    "length": 165
+  },
+  {
+    "file": "src/cli/commands/simulate-wizard.ts",
+    "method": "customWizard",
+    "startLine": 215,
+    "endLine": 379,
+    "length": 165
+  },
+  {
+    "file": "src/controllers/ReflexionMemory.ts",
+    "method": "storeEpisode",
+    "startLine": 80,
+    "endLine": 217,
+    "length": 138
+  },
+  {
+    "file": "src/controllers/CausalMemoryGraph.ts",
+    "method": "getCausalChainWithAttention",
+    "startLine": 477,
+    "endLine": 612,
+    "length": 136
+  },
+  {
+    "file": "src/mcp/agentdb-mcp-server.ts",
+    "method": "initializeSchema",
+    "startLine": 56,
+    "endLine": 186,
+    "length": 131
+  },
+  {
+    "file": "src/cli/agentdb-cli.ts",
+    "method": "handleVectorSearchCommand",
+    "startLine": 2015,
+    "endLine": 2137,
+    "length": 123
+  },
+  {
+    "file": "src/controllers/SkillLibrary.ts",
+    "method": "retrieveSkills",
+    "startLine": 179,
+    "endLine": 300,
+    "length": 122
+  }
+]

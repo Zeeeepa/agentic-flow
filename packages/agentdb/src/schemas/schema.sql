@@ -379,4 +379,11 @@ END;
 -- Schema version: 1.0.0
 -- Compatible with: SQLite 3.35+, sqlite-vec (optional), sqlite-vss (optional)
 -- WASM compatible: Yes (via SQLite-WASM + OPFS)
+--
+-- Performance Optimization:
+-- For production deployments, apply composite index migration for 30-50% query speedup:
+--   - Migration file: db/migrations/003_composite_indexes.sql
+--   - Adds 40+ composite indexes for common query patterns
+--   - Trade-off: 2x slower writes, +15-20% storage (acceptable for read-heavy workloads)
+--   - See: db/migrations/README.md for details
 -- ============================================================================

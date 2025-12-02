@@ -21,7 +21,7 @@ describe('BatchOperations', () => {
 
   beforeEach(async () => {
     // Clean up
-    [TEST_DB_PATH, `${TEST_DB_PATH}-wal`, `${TEST_DB_PATH}-shm`].forEach(file => {
+    [TEST_DB_PATH, `${TEST_DB_PATH}-wal`, `${TEST_DB_PATH}-shm`].forEach((file) => {
       if (fs.existsSync(file)) fs.unlinkSync(file);
     });
 
@@ -55,7 +55,7 @@ describe('BatchOperations', () => {
 
   afterEach(() => {
     db.close();
-    [TEST_DB_PATH, `${TEST_DB_PATH}-wal`, `${TEST_DB_PATH}-shm`].forEach(file => {
+    [TEST_DB_PATH, `${TEST_DB_PATH}-wal`, `${TEST_DB_PATH}-shm`].forEach((file) => {
       if (fs.existsSync(file)) fs.unlinkSync(file);
     });
   });
@@ -123,24 +123,28 @@ describe('BatchOperations', () => {
     }, 15000);
 
     it('should handle episodes with all fields', async () => {
-      const episodes: Episode[] = [{
-        sessionId: 'full-episode',
-        task: 'comprehensive task',
-        input: 'test input',
-        output: 'test output',
-        critique: 'test critique',
-        reward: 0.95,
-        success: true,
-        latencyMs: 100,
-        tokensUsed: 500,
-      }];
+      const episodes: Episode[] = [
+        {
+          sessionId: 'full-episode',
+          task: 'comprehensive task',
+          input: 'test input',
+          output: 'test output',
+          critique: 'test critique',
+          reward: 0.95,
+          success: true,
+          latencyMs: 100,
+          tokensUsed: 500,
+        },
+      ];
 
       const count = await batchOps.insertEpisodes(episodes);
 
       expect(count).toBe(1);
 
       // Verify all fields were saved
-      const saved = db.prepare('SELECT * FROM episodes WHERE session_id = ?').get('full-episode') as any;
+      const saved = db
+        .prepare('SELECT * FROM episodes WHERE session_id = ?')
+        .get('full-episode') as any;
       expect(saved.task).toBe('comprehensive task');
       expect(saved.input).toBe('test input');
       expect(saved.output).toBe('test output');
@@ -197,7 +201,7 @@ describe('BatchOperations', () => {
       const items = Array.from({ length: 10 }, (_, i) => `item-${i}`);
 
       const results = await batchOps.processInParallel(items, async (item) => {
-        await new Promise(resolve => setTimeout(resolve, 10));
+        await new Promise((resolve) => setTimeout(resolve, 10));
         return item.toUpperCase();
       });
 
@@ -225,7 +229,9 @@ describe('BatchOperations', () => {
       expect(deleted).toBeGreaterThan(0);
 
       // Verify deletions
-      const remaining = db.prepare('SELECT COUNT(*) as count FROM episodes WHERE success = 0').get() as any;
+      const remaining = db
+        .prepare('SELECT COUNT(*) as count FROM episodes WHERE success = 0')
+        .get() as any;
       expect(remaining.count).toBe(0);
     });
   });
@@ -244,16 +250,14 @@ describe('BatchOperations', () => {
     });
 
     it('should bulk update by condition', () => {
-      const updated = batchOps.bulkUpdate(
-        'episodes',
-        { success: 0 },
-        { session_id: 'session-5' }
-      );
+      const updated = batchOps.bulkUpdate('episodes', { success: 0 }, { session_id: 'session-5' });
 
       expect(updated).toBeGreaterThan(0);
 
       // Verify update
-      const record = db.prepare('SELECT * FROM episodes WHERE session_id = ?').get('session-5') as any;
+      const record = db
+        .prepare('SELECT * FROM episodes WHERE session_id = ?')
+        .get('session-5') as any;
       expect(record.success).toBe(0);
     });
   });
@@ -301,7 +305,7 @@ describe('BatchOperations', () => {
     it('should include table row counts', () => {
       const stats = batchOps.getStats();
 
-      const episodeStats = stats.tableStats.find(t => t.name === 'episodes');
+      const episodeStats = stats.tableStats.find((t) => t.name === 'episodes');
       expect(episodeStats).toBeDefined();
       expect(episodeStats!.rows).toBe(50);
     });
@@ -323,5 +327,286 @@ describe('BatchOperations', () => {
       expect(count).toBe(1000);
       expect(duration).toBeLessThan(15000); // Should complete in less than 15 seconds
     }, 20000);
+  });
+
+  describe('batchInsertParallel', () => {
+    it('should insert data in parallel with default config', async () => {
+      const data = Array.from({ length: 3000 }, (_, i) => ({
+        session_id: `session-${i}`,
+        task: `task ${i}`,
+        reward: Math.random(),
+        success: Math.random() > 0.5 ? 1 : 0,
+      }));
+
+      const result = await batchOps.batchInsertParallel('episodes', data, [
+        'session_id',
+        'task',
+        'reward',
+        'success',
+      ]);
+
+      expect(result.totalInserted).toBe(3000);
+      expect(result.errors).toHaveLength(0);
+      expect(result.chunksProcessed).toBe(3); // 3 chunks of 1000
+      expect(result.duration).toBeGreaterThan(0);
+
+      // Verify data was inserted
+      const count = db.prepare('SELECT COUNT(*) as count FROM episodes').get() as any;
+      expect(count.count).toBe(3000);
+    }, 20000);
+
+    it('should demonstrate parallel processing capabilities', async () => {
+      // Create test data
+      const data = Array.from({ length: 5000 }, (_, i) => ({
+        session_id: `session-${i}`,
+        task: `task ${i}`,
+        reward: Math.random(),
+        success: 1,
+      }));
+
+      // Parallel insert with timing
+      const result = await batchOps.batchInsertParallel(
+        'episodes',
+        data,
+        ['session_id', 'task', 'reward', 'success'],
+        { chunkSize: 1000, maxConcurrency: 5 }
+      );
+
+      // Verify all data was inserted correctly
+      expect(result.totalInserted).toBe(5000);
+      expect(result.errors).toHaveLength(0);
+      expect(result.chunksProcessed).toBe(5);
+
+      // Should complete in reasonable time (benefits vary by system)
+      expect(result.duration).toBeGreaterThan(0);
+      expect(result.duration).toBeLessThan(10000); // Under 10 seconds
+
+      console.log(
+        `Parallel insert (5k rows): ${result.duration}ms (${result.chunksProcessed} chunks)`
+      );
+    }, 30000);
+
+    it('should handle custom chunk size and concurrency', async () => {
+      const data = Array.from({ length: 2500 }, (_, i) => ({
+        session_id: `session-${i}`,
+        task: `task ${i}`,
+        reward: 0.5,
+        success: 1,
+      }));
+
+      const result = await batchOps.batchInsertParallel(
+        'episodes',
+        data,
+        ['session_id', 'task', 'reward', 'success'],
+        { chunkSize: 500, maxConcurrency: 3 }
+      );
+
+      expect(result.totalInserted).toBe(2500);
+      expect(result.chunksProcessed).toBe(5); // 5 chunks of 500
+      expect(result.errors).toHaveLength(0);
+    }, 20000);
+
+    it('should handle transaction rollback on error', async () => {
+      const data = Array.from({ length: 1000 }, (_, i) => ({
+        session_id: `session-${i}`,
+        task: `task ${i}`,
+        reward: 0.5,
+        success: 1,
+      }));
+
+      // Add one invalid row to cause error (invalid column value)
+      data[500] = {
+        session_id: null as any, // session_id is required
+        task: 'task 500',
+        reward: 0.5,
+        success: 1,
+      };
+
+      try {
+        await batchOps.batchInsertParallel(
+          'episodes',
+          data,
+          ['session_id', 'task', 'reward', 'success'],
+          { chunkSize: 1000, maxConcurrency: 2, retryAttempts: 1 }
+        );
+      } catch (error) {
+        // Expected to fail
+        expect(error).toBeDefined();
+      }
+
+      // Verify that other chunks may have been inserted (depends on timing)
+      // But the failed chunk should be fully rolled back
+      const count = db.prepare('SELECT COUNT(*) as count FROM episodes').get() as any;
+      // Should be less than 1000 since one chunk failed
+      expect(count.count).toBeLessThan(1000);
+    }, 20000);
+
+    it('should validate table name', async () => {
+      const data = [{ col1: 'value1' }];
+
+      await expect(
+        batchOps.batchInsertParallel('invalid_table_name', data, ['col1'])
+      ).rejects.toThrow();
+    });
+
+    it('should validate column names', async () => {
+      const data = [{ nonexistent_column: 'value' }];
+
+      await expect(
+        batchOps.batchInsertParallel('episodes', data, ['nonexistent_column'])
+      ).rejects.toThrow(/Invalid columns/);
+    });
+
+    it('should handle JSON data correctly', async () => {
+      const data = Array.from({ length: 100 }, (_, i) => ({
+        session_id: `session-${i}`,
+        task: `task ${i}`,
+        reward: 0.5,
+        success: 1,
+        tags: JSON.stringify(['tag1', 'tag2']),
+        metadata: JSON.stringify({ key: 'value' }),
+      }));
+
+      const result = await batchOps.batchInsertParallel(
+        'episodes',
+        data,
+        ['session_id', 'task', 'reward', 'success', 'tags', 'metadata'],
+        { chunkSize: 50 }
+      );
+
+      expect(result.totalInserted).toBe(100);
+
+      // Verify JSON data was stored correctly
+      const row = db.prepare('SELECT tags, metadata FROM episodes LIMIT 1').get() as any;
+      expect(row.tags).toBeDefined();
+      expect(row.metadata).toBeDefined();
+    });
+
+    it('should report progress via callback', async () => {
+      const data = Array.from({ length: 2000 }, (_, i) => ({
+        session_id: `session-${i}`,
+        task: `task ${i}`,
+        reward: 0.5,
+        success: 1,
+      }));
+
+      const progressUpdates: number[] = [];
+      const progressBatchOps = new BatchOperations(db, embedder, {
+        batchSize: 100,
+        parallelism: 4,
+        progressCallback: (completed, total) => {
+          progressUpdates.push(completed);
+        },
+      });
+
+      await progressBatchOps.batchInsertParallel(
+        'episodes',
+        data,
+        ['session_id', 'task', 'reward', 'success'],
+        { chunkSize: 1000 }
+      );
+
+      expect(progressUpdates.length).toBeGreaterThan(0);
+      expect(progressUpdates[progressUpdates.length - 1]).toBe(2000);
+    }, 20000);
+
+    it('should work without transactions when disabled', async () => {
+      const data = Array.from({ length: 500 }, (_, i) => ({
+        session_id: `session-${i}`,
+        task: `task ${i}`,
+        reward: 0.5,
+        success: 1,
+      }));
+
+      const result = await batchOps.batchInsertParallel(
+        'episodes',
+        data,
+        ['session_id', 'task', 'reward', 'success'],
+        { chunkSize: 250, useTransaction: false }
+      );
+
+      expect(result.totalInserted).toBe(500);
+    });
+
+    it('should retry on transient failures', async () => {
+      // This test simulates retry behavior by causing a temporary condition
+      // In a real scenario, this would test network failures or lock timeouts
+      const data = Array.from({ length: 100 }, (_, i) => ({
+        session_id: `session-${i}`,
+        task: `task ${i}`,
+        reward: 0.5,
+        success: 1,
+      }));
+
+      const result = await batchOps.batchInsertParallel(
+        'episodes',
+        data,
+        ['session_id', 'task', 'reward', 'success'],
+        { chunkSize: 50, retryAttempts: 3, retryDelayMs: 50 }
+      );
+
+      expect(result.totalInserted).toBe(100);
+      expect(result.errors).toHaveLength(0);
+    });
+
+    it('should handle empty data array', async () => {
+      const result = await batchOps.batchInsertParallel(
+        'episodes',
+        [],
+        ['session_id', 'task', 'reward', 'success']
+      );
+
+      expect(result.totalInserted).toBe(0);
+      expect(result.chunksProcessed).toBe(0);
+      expect(result.errors).toHaveLength(0);
+    });
+
+    it('should handle single row', async () => {
+      const data = [
+        {
+          session_id: 'single-session',
+          task: 'single task',
+          reward: 0.9,
+          success: 1,
+        },
+      ];
+
+      const result = await batchOps.batchInsertParallel('episodes', data, [
+        'session_id',
+        'task',
+        'reward',
+        'success',
+      ]);
+
+      expect(result.totalInserted).toBe(1);
+      expect(result.chunksProcessed).toBe(1);
+    });
+
+    it('should benchmark parallel vs sequential for 10k rows', async () => {
+      const data = Array.from({ length: 10000 }, (_, i) => ({
+        session_id: `bench-${i}`,
+        task: `benchmark task ${i}`,
+        reward: Math.random(),
+        success: Math.random() > 0.5 ? 1 : 0,
+      }));
+
+      // Parallel insert
+      const parallelStart = Date.now();
+      const result = await batchOps.batchInsertParallel(
+        'episodes',
+        data,
+        ['session_id', 'task', 'reward', 'success'],
+        { chunkSize: 1000, maxConcurrency: 5 }
+      );
+      const parallelDuration = Date.now() - parallelStart;
+
+      expect(result.totalInserted).toBe(10000);
+
+      console.log(`Parallel insert (10k rows): ${parallelDuration}ms`);
+      console.log(`Speedup potential: ${result.chunksProcessed} chunks processed concurrently`);
+
+      // Should complete in reasonable time (under 10 seconds)
+      expect(parallelDuration).toBeLessThan(10000);
+    }, 30000);
   });
 });

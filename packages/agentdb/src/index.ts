@@ -41,6 +41,8 @@ export { createDatabase } from './db-fallback.js';
 // Optimizations
 export { BatchOperations } from './optimizations/BatchOperations.js';
 export { QueryOptimizer } from './optimizations/QueryOptimizer.js';
+export { QueryCache } from './core/QueryCache.js';
+export type { QueryCacheConfig, CacheEntry, CacheStatistics } from './core/QueryCache.js';
 
 // Security
 export {
@@ -49,7 +51,7 @@ export {
   validatePragmaCommand,
   buildSafeWhereClause,
   buildSafeSetClause,
-  ValidationError
+  ValidationError,
 } from './security/input-validation.js';
 
 // Re-export all controllers for convenience
