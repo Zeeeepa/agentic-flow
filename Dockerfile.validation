@@ -1,0 +1,38 @@
+# Docker Validation Environment for Agentic-Flow v2.0.0-alpha
+# Clean environment to simulate fresh npm/npx install
+
+FROM node:20-alpine
+
+# Install system dependencies
+RUN apk add --no-cache \
+    git \
+    python3 \
+    make \
+    g++ \
+    bash \
+    curl \
+    jq
+
+# Create validation user
+RUN adduser -D -s /bin/bash validator
+WORKDIR /home/validator
+
+# Copy package for local testing
+COPY --chown=validator:validator . /home/validator/agentic-flow
+
+# Switch to validation user
+USER validator
+
+# Set up test environment
+ENV NODE_ENV=test
+ENV PATH="/home/validator/.npm-global/bin:$PATH"
+
+# Create validation script
+RUN echo '#!/bin/bash' > /home/validator/validate.sh && \
+    echo 'set -e' >> /home/validator/validate.sh && \
+    echo 'echo "🚀 Agentic-Flow v2.0.0-alpha Validation"' >> /home/validator/validate.sh && \
+    echo 'echo "========================================="' >> /home/validator/validate.sh && \
+    chmod +x /home/validator/validate.sh
+
+# Default command
+CMD ["/bin/bash", "/home/validator/validate.sh"]
