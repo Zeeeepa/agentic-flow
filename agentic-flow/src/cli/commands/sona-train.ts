@@ -6,8 +6,9 @@
 
 import { Command } from 'commander';
 import { AgentFactory, CodebaseTrainer, AgentTemplates } from '../../services/sona-agent-training.js';
-import { readFileSync, writeFileSync, readdirSync, statSync } from 'fs';
-import { join, extname } from 'path';
+import { ValidationUtils } from '../../services/sona-types.js';
+import { readFileSync, writeFileSync, readdirSync, statSync, mkdirSync } from 'fs';
+import { join, extname, resolve } from 'path';
 
 export function createSONATrainingCommands(program: Command) {
   const sonaTrain = program
@@ -72,10 +73,17 @@ export function createSONATrainingCommands(program: Command) {
         console.log(`   Quality Threshold: ${stats?.config.qualityThreshold}`);
         console.log(`   Route: ${stats?.config.route || 'default'}\n`);
 
-        // Save agent config
-        const configPath = `.sona-agents/${options.name}.json`;
-        writeFileSync(configPath, JSON.stringify(stats, null, 2));
-        console.log(`   Config saved: ${configPath}\n`);
+        // Save agent config (with path validation)
+        const baseDir = resolve(process.cwd(), '.sona-agents');
+        mkdirSync(baseDir, { recursive: true });
+
+        const safePath = ValidationUtils.sanitizePath(
+          join('.sona-agents', `${options.name}.json`),
+          process.cwd()
+        );
+
+        writeFileSync(safePath, JSON.stringify(stats, null, 2));
+        console.log(`   Config saved: ${safePath}\n`);
 
       } catch (error: any) {
         console.error(`\n❌ Error creating agent: ${error.message}\n`);
@@ -94,9 +102,12 @@ export function createSONATrainingCommands(program: Command) {
       try {
         const factory = new AgentFactory();
 
-        // Load agent config
-        const configPath = `.sona-agents/${options.name}.json`;
-        const agentConfig = JSON.parse(readFileSync(configPath, 'utf8'));
+        // Load agent config (with path validation)
+        const safePath = ValidationUtils.sanitizePath(
+          join('.sona-agents', `${options.name}.json`),
+          process.cwd()
+        );
+        const agentConfig = JSON.parse(readFileSync(safePath, 'utf8'));
 
         // Recreate agent
         factory.createAgent(options.name, agentConfig.config);
@@ -162,9 +173,12 @@ export function createSONATrainingCommands(program: Command) {
         console.log(`   Code chunks: ${chunks}`);
         console.log(`   Patterns: ${stats.totalPatterns || 0}\n`);
 
-        // Save index
-        const indexPath = `.sona-codebase-index.json`;
-        writeFileSync(indexPath, JSON.stringify({
+        // Save index (with path validation)
+        const safePath = ValidationUtils.sanitizePath(
+          '.sona-codebase-index.json',
+          process.cwd()
+        );
+        writeFileSync(safePath, JSON.stringify({
           path: options.path,
           files: files.length,
           chunks,
@@ -172,7 +186,7 @@ export function createSONATrainingCommands(program: Command) {
           indexed: new Date().toISOString()
         }, null, 2));
 
-        console.log(`   Index saved: ${indexPath}\n`);
+        console.log(`   Index saved: ${safePath}\n`);
 
       } catch (error: any) {
         console.error(`\n❌ Error indexing codebase: ${error.message}\n`);
@@ -188,31 +202,45 @@ export function createSONATrainingCommands(program: Command) {
       try {
         const factory = new AgentFactory();
 
-        // Load all agent configs
-        const agents = readdirSync('.sona-agents')
-          .filter(f => f.endsWith('.json'))
-          .map(f => JSON.parse(readFileSync(join('.sona-agents', f), 'utf8')));
+        // Load all agent configs (with path validation)
+        const baseDir = resolve(process.cwd(), '.sona-agents');
 
-        if (agents.length === 0) {
-          console.log('\n📝 No agents found. Create one with: sona-train create-agent\n');
-          return;
+        try {
+          const files = readdirSync(baseDir);
+          const agents = files
+            .filter(f => f.endsWith('.json'))
+            .map(f => {
+              const safePath = ValidationUtils.sanitizePath(join('.sona-agents', f), process.cwd());
+              return JSON.parse(readFileSync(safePath, 'utf8'));
+            });
+
+          if (agents.length === 0) {
+            console.log('\n📝 No agents found. Create one with: sona-train create-agent\n');
+            return;
+          }
+
+          console.log('\n📋 Trained Agents:\n');
+          console.log('  Name                 Purpose    Training  Avg Quality  Patterns');
+          console.log('  ' + '─'.repeat(70));
+
+          for (const agent of agents) {
+            console.log(
+              `  ${agent.name.padEnd(20)} ` +
+              `${agent.purpose.padEnd(10)} ` +
+              `${agent.trainingCount.toString().padEnd(9)} ` +
+              `${agent.avgQuality.toFixed(3).padEnd(12)} ` +
+              `${agent.patterns}`
+            );
+          }
+
+          console.log('');
+        } catch (dirError: any) {
+          if (dirError.code === 'ENOENT') {
+            console.log('\n📝 No agents found. Create one with: sona-train create-agent\n');
+          } else {
+            throw dirError;
+          }
         }
-
-        console.log('\n📋 Trained Agents:\n');
-        console.log('  Name                 Purpose    Training  Avg Quality  Patterns');
-        console.log('  ' + '─'.repeat(70));
-
-        for (const agent of agents) {
-          console.log(
-            `  ${agent.name.padEnd(20)} ` +
-            `${agent.purpose.padEnd(10)} ` +
-            `${agent.trainingCount.toString().padEnd(9)} ` +
-            `${agent.avgQuality.toFixed(3).padEnd(12)} ` +
-            `${agent.patterns}`
-          );
-        }
-
-        console.log('');
 
       } catch (error: any) {
         console.error(`\n❌ Error listing agents: ${error.message}\n`);
@@ -230,9 +258,12 @@ export function createSONATrainingCommands(program: Command) {
       try {
         const factory = new AgentFactory();
 
-        // Load agent config
-        const configPath = `.sona-agents/${options.name}.json`;
-        const agentConfig = JSON.parse(readFileSync(configPath, 'utf8'));
+        // Load agent config (with path validation)
+        const safePath = ValidationUtils.sanitizePath(
+          join('.sona-agents', `${options.name}.json`),
+          process.cwd()
+        );
+        const agentConfig = JSON.parse(readFileSync(safePath, 'utf8'));
         factory.createAgent(options.name, agentConfig.config);
 
         // Mock embedding (in production, use actual embedding service)

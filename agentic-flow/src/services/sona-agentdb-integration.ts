@@ -8,6 +8,7 @@
 import { EventEmitter } from 'events';
 import { SonaEngine } from '@ruvector/sona';
 import agentdb from 'agentdb';
+import { SONAEngine, SONAStats, LearnResult, ValidationUtils } from './sona-types.js';
 
 export interface AgentDBSONAConfig {
   // SONA config
@@ -44,8 +45,8 @@ export interface TrainingPattern {
  * - Combined: 150x-12,500x performance boost
  */
 export class SONAAgentDBTrainer extends EventEmitter {
-  private sonaEngine: any;
-  private db: any;
+  private sonaEngine: SONAEngine | null = null;
+  private db: any = null;
   private config: AgentDBSONAConfig;
   private initialized: boolean = false;
 
@@ -113,6 +114,15 @@ export class SONAAgentDBTrainer extends EventEmitter {
   async train(pattern: TrainingPattern): Promise<string> {
     await this.initialize();
 
+    // Validate inputs
+    ValidationUtils.validateEmbedding(pattern.embedding);
+    ValidationUtils.validateStates(pattern.hiddenStates, pattern.attention);
+    ValidationUtils.validateQuality(pattern.quality);
+
+    if (!this.sonaEngine) {
+      throw new Error('SONA engine not initialized');
+    }
+
     // 1. SONA trajectory
     const tid = this.sonaEngine.beginTrajectory(pattern.embedding);
 
@@ -179,6 +189,18 @@ export class SONAAgentDBTrainer extends EventEmitter {
     };
   }> {
     await this.initialize();
+
+    // Validate inputs
+    ValidationUtils.validateEmbedding(queryEmbedding);
+    ValidationUtils.validateQuality(minQuality, 'minQuality');
+
+    if (k < 1 || k > 1000) {
+      throw new Error(`k must be between 1 and 1000, got ${k}`);
+    }
+
+    if (!this.sonaEngine || !this.db) {
+      throw new Error('SONA engine or database not initialized');
+    }
 
     const startTime = performance.now();
 
@@ -255,7 +277,7 @@ export class SONAAgentDBTrainer extends EventEmitter {
    * Get comprehensive statistics
    */
   async getStats(): Promise<{
-    sona: any;
+    sona: SONAStats;
     agentdb: any;
     combined: {
       totalPatterns: number;
@@ -264,6 +286,10 @@ export class SONAAgentDBTrainer extends EventEmitter {
     };
   }> {
     await this.initialize();
+
+    if (!this.sonaEngine || !this.db) {
+      throw new Error('SONA engine or database not initialized');
+    }
 
     const sonaStats = this.sonaEngine.getStats();
     const agentdbStats = await this.db.stats();
@@ -282,10 +308,11 @@ export class SONAAgentDBTrainer extends EventEmitter {
   /**
    * Force SONA learning cycle
    */
-  async forceLearn(): Promise<{
-    patternsLearned: number;
-    quality: number;
-  }> {
+  async forceLearn(): Promise<LearnResult> {
+    if (!this.sonaEngine) {
+      throw new Error('SONA engine not initialized');
+    }
+
     const result = this.sonaEngine.forceLearn();
     this.emit('learn:complete', result);
     return result;
@@ -313,9 +340,17 @@ export class SONAAgentDBTrainer extends EventEmitter {
    * Close connections
    */
   async close(): Promise<void> {
+    // Remove all event listeners to prevent memory leaks
+    this.removeAllListeners();
+
+    // Close AgentDB connection
     if (this.db) {
       await this.db.close();
+      this.db = null;
     }
+
+    // Clear SONA engine reference
+    this.sonaEngine = null;
     this.initialized = false;
   }
 
