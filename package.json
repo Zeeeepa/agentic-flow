@@ -1,14 +1,16 @@
 {
   "name": "agentic-flow",
   "version": "1.10.3",
-  "description": "Production-ready AI agent orchestration platform with 66 specialized agents, 213 MCP tools, ReasoningBank learning memory, and autonomous multi-agent swarms. Built by @ruvnet with Claude Agent SDK, neural networks, memory persistence, GitHub integration, and distributed consensus protocols.",
+  "description": "Production-ready AI agent orchestration platform with 66 specialized agents, 213 MCP tools, ReasoningBank learning memory, quantum-resistant Jujutsu VCS, and autonomous multi-agent swarms. Built by @ruvnet with Claude Agent SDK, neural networks, memory persistence, GitHub integration, and distributed consensus protocols.",
   "type": "module",
   "main": "agentic-flow/dist/index.js",
   "types": "agentic-flow/dist/index.d.ts",
   "bin": {
     "agentic-flow": "agentic-flow/dist/cli-proxy.js",
     "agentdb": "agentic-flow/dist/agentdb/cli/agentdb-cli.js",
-    "ajj-billing": "agentic-flow/dist/billing/cli.js"
+    "ajj-billing": "agentic-flow/dist/billing/cli.js",
+    "agentic-jujutsu": "packages/agentic-jujutsu/bin/cli.js",
+    "jj-agent": "packages/agentic-jujutsu/bin/cli.js"
   },
   "exports": {
     ".": "./agentic-flow/dist/index.js",
@@ -23,7 +25,17 @@
     "./agent-booster": "./agentic-flow/dist/agent-booster/index.js",
     "./transport/quic": "./agentic-flow/dist/transport/quic.js",
     "./agentdb": "./agentic-flow/dist/agentdb/index.js",
-    "./billing": "./agentic-flow/dist/billing/index.js"
+    "./billing": "./agentic-flow/dist/billing/index.js",
+    "./agentic-jujutsu": {
+      "require": "./packages/agentic-jujutsu/index.js",
+      "import": "./packages/agentic-jujutsu/index.js",
+      "types": "./packages/agentic-jujutsu/index.d.ts"
+    },
+    "./agentic-jujutsu/quantum": {
+      "require": "./packages/agentic-jujutsu/src/quantum_bridge.js",
+      "import": "./packages/agentic-jujutsu/src/quantum_bridge.js",
+      "types": "./packages/agentic-jujutsu/quantum-bridge.d.ts"
+    }
   },
   "scripts": {
     "postinstall": "cd agentic-flow && node scripts/postinstall.js || true",
@@ -92,6 +104,11 @@
     "goap",
     "hive-mind",
     "huggingface",
+    "jujutsu",
+    "jujutsu-vcs",
+    "quantum-resistant",
+    "quantum-cryptography",
+    "quantumdag",
     "llm",
     "llm-orchestration",
     "machine-learning",
@@ -118,6 +135,8 @@
     "swarm-intelligence",
     "task-orchestration",
     "typescript",
+    "version-control",
+    "vcs",
     "workflow",
     "workflow-automation"
   ],
