@@ -46,7 +46,8 @@
   },
   "bin": {
     "agentic-jujutsu": "./bin/cli.js",
-    "jj-agent": "./bin/cli.js"
+    "jj-agent": "./bin/cli.js",
+    "jj-mcp": "./bin/mcp-server.js"
   },
   "files": [
     "index.js",

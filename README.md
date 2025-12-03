@@ -258,7 +258,7 @@ mcp__agentic-jujutsu__new_commit { message: "Automated commit" }
 | Diff | 85ms | 18ms | **4.7x faster** |
 | Commit | 120ms | 22ms | **5.5x faster** |
 
-[→ See Jujutsu Quick Start Guide](./docs/AGENTIC_JUJUTSU_QUICKSTART.md)
+[→ See Jujutsu Quick Start Guide](https://github.com/ruvnet/agentic-flow/blob/main/docs/AGENTIC_JUJUTSU_QUICKSTART.md)
 
 ---
 

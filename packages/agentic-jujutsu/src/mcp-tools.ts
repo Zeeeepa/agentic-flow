@@ -3,8 +3,8 @@
  * Version control operations for AI agents with quantum-resistant signatures
  */
 
-import { JjWrapper } from '../index.js';
-import { QuantumBridge } from './quantum_bridge.js';
+import { JjWrapper } from '../index';
+import { QuantumBridge } from './quantum_bridge';
 
 export interface JjStatusArgs {
   path?: string;
