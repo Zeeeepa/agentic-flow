@@ -31,7 +31,7 @@ export class ReflexionBenchmark {
     this.embedder = new EmbeddingService({
       model: 'all-MiniLM-L6-v2',
       dimension: 384,
-      provider: 'transformers'
+      provider: 'onnx-wasm' // ONNX WASM for benchmark performance
     });
     this.memory = new ReflexionMemory(this.db, this.embedder);
   }

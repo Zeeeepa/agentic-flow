@@ -1,7 +1,7 @@
 // CLI argument parsing and help utilities
 
 export interface CliOptions {
-  mode: 'agent' | 'parallel' | 'list' | 'mcp' | 'mcp-manager' | 'config' | 'agent-manager' | 'proxy' | 'quic' | 'claude-code' | 'reasoningbank' | 'federation' | 'hooks' | 'workers';
+  mode: 'agent' | 'parallel' | 'list' | 'mcp' | 'mcp-manager' | 'config' | 'agent-manager' | 'proxy' | 'quic' | 'claude-code' | 'reasoningbank' | 'federation' | 'hooks' | 'workers' | 'embeddings';
   agent?: string;
   task?: string;
 
@@ -121,6 +121,12 @@ export function parseArgs(): CliOptions {
   // Check for workers command
   if (args[0] === 'workers') {
     options.mode = 'workers';
+    return options;
+  }
+
+  // Check for embeddings command
+  if (args[0] === 'embeddings') {
+    options.mode = 'embeddings';
     return options;
   }
 

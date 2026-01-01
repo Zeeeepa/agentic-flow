@@ -65,11 +65,11 @@ class AgentDBCLI {
       this.db.exec(schema);
     }
 
-    // Initialize embedding service
+    // Initialize embedding service (ONNX WASM preferred for performance)
     this.embedder = new EmbeddingService({
       model: 'all-MiniLM-L6-v2',
       dimension: 384,
-      provider: 'transformers'
+      provider: 'onnx-wasm' // Falls back to transformers if ONNX not available
     });
     await this.embedder.initialize();
 

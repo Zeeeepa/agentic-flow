@@ -65,7 +65,7 @@ export class ComprehensiveBenchmark {
     this.embedder = new EmbeddingService({
       model: 'all-MiniLM-L6-v2',
       dimension: 384,
-      provider: 'transformers'
+      provider: 'onnx-wasm' // ONNX WASM for benchmark performance
     });
 
     this.reflexion = new ReflexionMemory(this.db, this.embedder);

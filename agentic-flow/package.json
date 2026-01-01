@@ -1,6 +1,6 @@
 {
   "name": "agentic-flow",
-  "version": "2.0.1-alpha.44",
+  "version": "2.0.1-alpha.45",
   "description": "Production-ready AI agent orchestration platform with 66 specialized agents, 213 MCP tools, ReasoningBank learning memory, and autonomous multi-agent swarms. Built by @ruvnet with Claude Agent SDK, neural networks, memory persistence, GitHub integration, and distributed consensus protocols.",
   "type": "module",
   "main": "dist/index.js",
@@ -19,7 +19,8 @@
     "./reasoningbank/wasm-adapter": "./dist/reasoningbank/wasm-adapter.js",
     "./router": "./dist/router/index.js",
     "./agent-booster": "./dist/agent-booster/index.js",
-    "./transport/quic": "./dist/transport/quic.js"
+    "./transport/quic": "./dist/transport/quic.js",
+    "./embeddings": "./dist/embeddings/index.js"
   },
   "scripts": {
     "postinstall": "node scripts/postinstall.js || true",

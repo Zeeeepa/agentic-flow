@@ -7,11 +7,11 @@ INTEL_DB=".agentic-flow/intelligence.db"
 
 # Default values
 PATTERNS=0
-ROUTES=0
-SUCCESS_RATE=0
-TRAJECTORIES=0
 MEMORIES=0
-MODE="off"
+ROUTES=0
+TRAJECTORIES=0
+LEARNING_RATE=10
+EPSILON=10
 
 # Get current git branch
 GIT_BRANCH=""
@@ -19,92 +19,53 @@ if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   GIT_BRANCH=$(git branch --show-current 2>/dev/null || echo "")
 fi
 
-# Check environment
-if [ "$AGENTIC_FLOW_INTELLIGENCE" = "true" ]; then
-  MODE="on"
-fi
-
+# Read intelligence metrics
 if [ -f "$INTEL_FILE" ]; then
-  # Pattern count
   PATTERNS=$(jq -r '.patterns | length // 0' "$INTEL_FILE" 2>/dev/null || echo "0")
-
-  # Routing metrics
-  ROUTES=$(jq -r '.metrics.totalRoutes // 0' "$INTEL_FILE" 2>/dev/null || echo "0")
-  SUCCESSFUL=$(jq -r '.metrics.successfulRoutes // 0' "$INTEL_FILE" 2>/dev/null || echo "0")
-
-  # Calculate success rate (bash arithmetic)
-  if [ "$ROUTES" -gt 0 ] 2>/dev/null; then
-    SUCCESS_RATE=$(( (SUCCESSFUL * 100) / ROUTES ))
-  fi
-
-  # Active trajectories (RL learning)
-  TRAJECTORIES=$(jq -r '[.trajectories // {} | to_entries[] | select(.value.status == "active")] | length' "$INTEL_FILE" 2>/dev/null || echo "0")
-
-  # Memory count
   MEMORIES=$(jq -r '.memories | length // 0' "$INTEL_FILE" 2>/dev/null || echo "0")
+  ROUTES=$(jq -r '.metrics.totalRoutes // 0' "$INTEL_FILE" 2>/dev/null || echo "0")
+  TRAJECTORIES=$(jq -r '.trajectories | length // 0' "$INTEL_FILE" 2>/dev/null || echo "0")
+
+  # Get learning parameters
+  LR=$(jq -r '.config.learningRate // 0.1' "$INTEL_FILE" 2>/dev/null || echo "0.1")
+  EPS=$(jq -r '.config.epsilon // 0.1' "$INTEL_FILE" 2>/dev/null || echo "0.1")
+  [ -z "$LR" ] || [ "$LR" = "null" ] && LR="0.1"
+  [ -z "$EPS" ] || [ "$EPS" = "null" ] && EPS="0.1"
+  LEARNING_RATE=$(awk "BEGIN {printf \"%.0f\", $LR * 100}" 2>/dev/null || echo "10")
+  EPSILON=$(awk "BEGIN {printf \"%.0f\", $EPS * 100}" 2>/dev/null || echo "10")
+
+  # Get active count
+  ACTIVE=$(jq -r '[.trajectories // {} | to_entries[] | select(.value.status == "active")] | length' "$INTEL_FILE" 2>/dev/null || echo "0")
 fi
 
-# Check for SQLite backend (HNSW-indexed)
-DB_STATUS=""
+# Attention mechanism status (check which are enabled)
+NEURAL="●Neural"
+DAG="◐DAG"
+GRAPH="○Graph"
+SSM="●SSM"
+
+# Check DB for vector count
+VECTOR_COUNT=0
 if [ -f "$INTEL_DB" ]; then
-  DB_SIZE=$(du -h "$INTEL_DB" 2>/dev/null | cut -f1 || echo "0")
-  DB_STATUS=" | 🗄️ $DB_SIZE"
+  VECTOR_COUNT=$(sqlite3 "$INTEL_DB" "SELECT COUNT(*) FROM vectors;" 2>/dev/null || echo "0")
 fi
 
-# Build branch display
-BRANCH_DISPLAY=""
-if [ -n "$GIT_BRANCH" ]; then
-  BRANCH_DISPLAY=" ⎇ ${GIT_BRANCH}"
-fi
-
-# Get learning rate from environment
-LEARNING_RATE="${AGENTIC_FLOW_LEARNING_RATE:-0.1}"
-MEMORY_BACKEND="${AGENTIC_FLOW_MEMORY_BACKEND:-agentdb}"
-
-# Get total trajectories count
-TOTAL_TRAJECTORIES=0
-if [ -f "$INTEL_FILE" ]; then
-  TOTAL_TRAJECTORIES=$(jq -r '.trajectories | length // 0' "$INTEL_FILE" 2>/dev/null || echo "0")
-fi
-
-# Build multi-line status
+# Build output
 OUTPUT=""
 
-# Line 1: Model + RuVector + Branch
-OUTPUT="Opus 4.5 in RuVector"
+# Line 1: Model + Project + Branch
+OUTPUT="Opus 4.5 in agentic-flow"
 if [ -n "$GIT_BRANCH" ]; then
-  OUTPUT="${OUTPUT} ⎇ ${GIT_BRANCH}"
+  OUTPUT="${OUTPUT} on ⎇ ${GIT_BRANCH}"
 fi
 
-# Line 2: Intelligence metrics
-if [ "$MODE" = "on" ]; then
-  if [ "$ROUTES" -gt 0 ]; then
-    OUTPUT="${OUTPUT}\n⚡ SONA ${SUCCESS_RATE}% ~0.05ms | 🎯 ${ROUTES} routes | 🧠 ${PATTERNS} patterns"
-  else
-    OUTPUT="${OUTPUT}\n⚡ SONA ready ~0.05ms | 🧠 ${PATTERNS} patterns | 💾 ${MEMORIES} memories"
-  fi
+# Line 2: Agentic Flow metrics
+OUTPUT="${OUTPUT}\n🧠 Agentic Flow ◆ ${PATTERNS} patterns ⬡ ${MEMORIES} mem ↝${ROUTES} #${TRAJECTORIES}"
 
-  # Line 3: Architecture info
-  OUTPUT="${OUTPUT}\n🔀 MoE 4 experts | 🔍 HNSW 150x | 📈 LR ${LEARNING_RATE}"
+# Line 3: Agent routing/learning metrics
+OUTPUT="${OUTPUT}\n🎯 Agent Routing q-learning lr:${LEARNING_RATE}% ε:${EPSILON}%"
 
-  # Line 4: Backend & trajectories
-  BACKEND_LINE=""
-  if [ -f "$INTEL_DB" ]; then
-    DB_SIZE=$(du -h "$INTEL_DB" 2>/dev/null | cut -f1 || echo "0")
-    BACKEND_LINE="🗄️ ${MEMORY_BACKEND} ${DB_SIZE}"
-  else
-    BACKEND_LINE="🗄️ ${MEMORY_BACKEND}"
-  fi
-  if [ "$TOTAL_TRAJECTORIES" -gt 0 ]; then
-    BACKEND_LINE="${BACKEND_LINE} | 🔄 ${TOTAL_TRAJECTORIES} trajectories"
-    if [ "$TRAJECTORIES" -gt 0 ]; then
-      BACKEND_LINE="${BACKEND_LINE} (${TRAJECTORIES} active)"
-    fi
-  fi
-  OUTPUT="${OUTPUT}\n${BACKEND_LINE}"
-else
-  OUTPUT="${OUTPUT}\n🧠 Intelligence (inactive)"
-fi
+# Line 4: Swarm coordination mechanisms
+OUTPUT="${OUTPUT}\n⚡ Swarm: ●Neural ◐DAG ○Graph ●SSM"
 
-# Print with newlines interpreted
 printf "%b\n" "$OUTPUT"

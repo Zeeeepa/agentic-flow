@@ -68,7 +68,7 @@ class AgenticFlowCLI {
     }
 
     // If no mode and no agent specified, show help
-    if (!options.agent && options.mode !== 'list' && !['config', 'agent-manager', 'mcp-manager', 'proxy', 'quic', 'claude-code', 'mcp', 'reasoningbank', 'federation', 'hooks', 'workers'].includes(options.mode)) {
+    if (!options.agent && options.mode !== 'list' && !['config', 'agent-manager', 'mcp-manager', 'proxy', 'quic', 'claude-code', 'mcp', 'reasoningbank', 'federation', 'hooks', 'workers', 'embeddings'].includes(options.mode)) {
       this.printHelp();
       process.exit(0);
     }
@@ -237,6 +237,13 @@ class AgenticFlowCLI {
       process.on('SIGINT', () => proc.kill('SIGINT'));
       process.on('SIGTERM', () => proc.kill('SIGTERM'));
       return;
+    }
+
+    if (options.mode === 'embeddings') {
+      // Handle Embeddings commands (init, download, list, benchmark, status)
+      const { handleEmbeddingsCommand } = await import('./cli/commands/embeddings.js');
+      await handleEmbeddingsCommand(process.argv.slice(3));
+      process.exit(0);
     }
 
     // Apply model optimization if requested
@@ -1162,6 +1169,15 @@ FEDERATION COMMANDS:
 
   Federation enables ephemeral agents (5s-15min lifetime) with persistent memory.
   Hub stores memories permanently; agents access past learnings from dead agents.
+
+EMBEDDINGS COMMANDS:
+  npx agentic-flow embeddings init       Download and initialize embeddings (default: all-MiniLM-L6-v2)
+  npx agentic-flow embeddings download   Download a specific model
+  npx agentic-flow embeddings list       List available embedding models
+  npx agentic-flow embeddings benchmark  Run embedding performance benchmarks
+  npx agentic-flow embeddings status     Show embeddings system status
+
+  Optimized ONNX embeddings with LRU cache, SIMD operations, and 150x faster search.
 
 OPTIONS:
   --task, -t <task>           Task description for agent mode
