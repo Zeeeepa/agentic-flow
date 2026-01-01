@@ -25,19 +25,23 @@ jobs:
     strategy:
       matrix:
         include:
-          - name: agentic-flow
+          - name: ""
+            image: agentic-flow
             dockerfile: docker/Dockerfile.agentic-flow
             context: .
             platforms: linux/amd64,linux/arm64
-          - name: agentic-flow-agentdb
+          - name: "-agentdb"
+            image: agentic-flow-agentdb
             dockerfile: docker/Dockerfile.agentdb
             context: .
             platforms: linux/amd64,linux/arm64
-          - name: agentic-flow-mcp
+          - name: "-mcp"
+            image: agentic-flow-mcp
             dockerfile: docker/Dockerfile.mcp-server
             context: .
             platforms: linux/amd64,linux/arm64
-          - name: agentic-flow-swarm
+          - name: "-swarm"
+            image: agentic-flow-swarm
             dockerfile: docker/Dockerfile.swarm
             context: .
             platforms: linux/amd64,linux/arm64
@@ -68,7 +72,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_PREFIX }}-${{ matrix.name }}
+          images: ${{ env.REGISTRY }}/ruvnet/${{ matrix.image }}
           tags: |
             type=ref,event=branch
             type=ref,event=pr
@@ -113,7 +117,7 @@ jobs:
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_PREFIX }}-${{ matrix.image }}:latest
+          image-ref: ${{ env.REGISTRY }}/ruvnet/${{ matrix.image }}:latest
           format: 'sarif'
           output: 'trivy-results-${{ matrix.image }}.sarif'
 
@@ -147,10 +151,10 @@ jobs:
 
       - name: Pull Docker images
         run: |
-          docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_PREFIX }}-agentic-flow:latest
-          docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_PREFIX }}-agentic-flow-agentdb:latest
-          docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_PREFIX }}-agentic-flow-mcp:latest
-          docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_PREFIX }}-agentic-flow-swarm:latest
+          docker pull ${{ env.REGISTRY }}/ruvnet/agentic-flow:latest
+          docker pull ${{ env.REGISTRY }}/ruvnet/agentic-flow-agentdb:latest
+          docker pull ${{ env.REGISTRY }}/ruvnet/agentic-flow-mcp:latest
+          docker pull ${{ env.REGISTRY }}/ruvnet/agentic-flow-swarm:latest
 
       - name: Start services
         run: |
@@ -204,7 +208,7 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-          repository: ${{ env.IMAGE_NAME_PREFIX }}-agentic-flow
+          repository: ruvnet/agentic-flow
           readme-filepath: ./docker/README.md
           short-description: "Production-ready AI agent orchestration platform with 66 specialized agents and 213 MCP tools"
 
