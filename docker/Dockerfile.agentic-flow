@@ -26,8 +26,8 @@ FROM base AS dependencies
 COPY package*.json ./
 COPY agentic-flow/package*.json ./agentic-flow/
 
-# Install dependencies
-RUN npm ci --only=production --ignore-scripts
+# Install dependencies (use npm install since we don't have full lockfile)
+RUN npm install --omit=dev --ignore-scripts
 
 # =============================================================================
 # Build Stage
