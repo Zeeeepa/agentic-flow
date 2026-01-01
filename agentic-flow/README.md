@@ -60,6 +60,7 @@ Most AI coding agents are **painfully slow** and **frustratingly forgetful**. Th
 | **QUIC Transport** | Ultra-low latency agent communication via Rust/WASM QUIC protocol | 50-70% faster than TCP, 0-RTT | [Docs](https://github.com/ruvnet/agentic-flow/tree/main/crates/agentic-flow-quic) |
 | **Federation Hub** 🆕 | Ephemeral agents (5s-15min lifetime) with persistent cross-agent memory | Infinite scale, 0 waste | [Docs](./agentic-flow/src/federation) |
 | **Swarm Optimization** 🆕 | Self-learning parallel execution with AI topology selection | 3-5x speedup, auto-optimizes | [Docs](./docs/swarm-optimization-report.md) |
+| **Background Workers** 🆕 | Non-blocking keyword-triggered workers with SONA/ReasoningBank learning | <5ms dispatch, auto-learn | [Docs](#-background-workers) |
 
 **CLI Usage**:
 - **AgentDB**: Full CLI with 17 commands (`npx agentdb <command>`)
@@ -69,6 +70,8 @@ Most AI coding agents are **painfully slow** and **frustratingly forgetful**. Th
 - **QUIC Transport**: API only
 - **Federation Hub**: `npx agentic-flow federation start` 🆕
 - **Swarm Optimization**: Automatic with parallel execution 🆕
+- **Background Workers**: `npx agentic-flow workers <command>` 🆕
+- **Intelligence Hooks**: `npx agentic-flow hooks <command>` 🆕
 
 **Programmatic**: All components importable: `agentic-flow/agentdb`, `agentic-flow/router`, `agentic-flow/reasoningbank`, `agentic-flow/agent-booster`, `agentic-flow/transport/quic`
 
@@ -235,6 +238,134 @@ spec:
 - **Resource Efficiency**: 95-98% (most patterns)
 
 **Documentation:** [Deployment Patterns Guide](https://github.com/ruvnet/agentic-flow/tree/main/docs/DEPLOYMENT-PATTERNS-GUIDE.md)
+
+---
+
+### ⚡ Background Workers
+
+**Non-blocking keyword-triggered workers** that run silently while users continue chatting, with full RuVector integration:
+
+```bash
+# CLI: Background worker operations
+npx agentic-flow workers dispatch ultralearn "authentication patterns" --session abc123
+npx agentic-flow workers status                    # View all workers
+npx agentic-flow workers status --worker wrk_123   # Specific worker
+npx agentic-flow workers cancel wrk_123            # Cancel running worker
+npx agentic-flow workers triggers                  # List available triggers
+npx agentic-flow workers stats --timeframe 24h    # Aggregated statistics
+
+# Initialize hooks and workers integration
+npx agentic-flow hooks init          # Creates .claude/settings.json with all hooks
+
+# Hook-based automatic dispatch (in .claude/settings.json)
+# Workers spawn automatically when keywords detected in prompts
+```
+
+**Trigger Keywords:**
+
+| Trigger | Description | Phases | Use Case |
+|---------|-------------|--------|----------|
+| **ultralearn** | Deep knowledge acquisition | discovery → analysis → vectorization → indexing | "ultralearn authentication" |
+| **optimize** | Performance optimization | pattern-analysis → bottleneck-detect → cache-warmup | "optimize my workflow" |
+| **consolidate** | Memory consolidation | inventory → similarity → merge → prune → reindex | "consolidate memories" |
+| **predict** | Predictive preloading | context-gather → pattern-match → predict → preload | "predict next steps" |
+| **audit** | Security analysis | static-analysis → dependency-scan → vulnerability-check | "audit this codebase" |
+| **map** | Codebase mapping | file-discovery → import-analysis → graph-build → cycle-detection | "map the architecture" |
+| **deepdive** | Deep code analysis | locate → trace-calls → build-graph → analyze-depth | "deepdive into auth.ts" |
+| **document** | Auto-documentation | analyze → template → generate → format | "document this module" |
+| **refactor** | Refactoring suggestions | complexity → duplication → coupling → suggestions | "refactor opportunities" |
+| **benchmark** | Performance benchmarks | discover → instrument → execute → analyze → report | "benchmark the API" |
+| **testgaps** | Test coverage analysis | coverage → paths → criticality → suggestions | "find testgaps" |
+
+**RuVector Integration:**
+- **SONA**: Self-learning trajectory tracking for each worker
+- **ReasoningBank**: Pattern storage from successful worker runs
+- **HNSW**: Vector indexing for semantic search of results
+- **Quality-based Learning**: Workers with 80%+ quality trigger pattern learning
+
+**Programmatic API:**
+```typescript
+import {
+  getWorkerDispatchService,
+  getTriggerDetector,
+  getRuVectorWorkerIntegration
+} from 'agentic-flow/workers';
+
+// Dispatch a worker
+const dispatcher = getWorkerDispatchService();
+const workerId = await dispatcher.dispatch('ultralearn', 'authentication', 'session-123');
+
+// Monitor progress
+dispatcher.on('worker:progress', ({ workerId, progress, phase }) => {
+  console.log(`Worker ${workerId}: ${progress}% - ${phase}`);
+});
+
+// Access learned patterns
+const ruvector = getRuVectorWorkerIntegration();
+const patterns = await ruvector.findRelevantPatterns('ultralearn', 'auth', 5);
+```
+
+**MCP Tools (8 tools):**
+- `worker_dispatch` - Spawn background worker
+- `worker_status` - Get worker status
+- `worker_cancel` - Cancel running worker
+- `worker_triggers` - List available triggers
+- `worker_results` - Get completed worker results
+- `worker_detect` - Detect triggers in prompt
+- `worker_stats` - Aggregated statistics
+- `worker_context` - Get relevant context for injection
+
+**Performance:**
+- **Trigger Detection**: <5ms (regex-based)
+- **Worker Spawn**: <50ms
+- **Max Concurrent**: 10 workers (configurable)
+- **Memory Limit**: 1024MB heap per session
+- **Learning**: Automatic SONA adaptation on 80%+ quality
+
+**Documentation:** [Background Workers Source](./src/workers/)
+
+---
+
+### 🧠 Intelligence Hooks CLI
+
+**Self-learning hooks** for intelligent agent routing and code optimization:
+
+```bash
+# Initialize - creates .claude/settings.json with all hooks
+npx agentic-flow hooks init           # Full configuration
+npx agentic-flow hooks init --minimal # Minimal setup
+
+# Pre/Post hooks for learning
+npx agentic-flow hooks pre-edit src/auth.ts --task "add OAuth"
+npx agentic-flow hooks post-edit src/auth.ts --success --agent coder
+npx agentic-flow hooks pre-command "npm test"
+npx agentic-flow hooks post-command "npm test" --exit-code 0
+
+# Intelligence routing
+npx agentic-flow hooks route "implement authentication"
+npx agentic-flow hooks explain "add OAuth to API"
+
+# RuVector intelligence (SONA + MoE + HNSW)
+npx agentic-flow hooks intelligence stats
+npx agentic-flow hooks intelligence route "debug memory leak"
+npx agentic-flow hooks intelligence trajectory-start --task "build API"
+npx agentic-flow hooks intelligence pattern-store --task "auth" --resolution "JWT"
+npx agentic-flow hooks intelligence pattern-search "authentication"
+
+# Bootstrap learning from codebase
+npx agentic-flow hooks pretrain
+npx agentic-flow hooks build-agents
+```
+
+**Generated settings.json** includes:
+- **PreToolUse**: Pre-edit/pre-command intelligence
+- **PostToolUse**: Success-based learning
+- **PostToolUseFailure**: Learn from failures
+- **SessionStart**: Workers status check, intelligence stats
+- **SessionEnd**: Workers cleanup (24h retention)
+- **UserPromptSubmit**: Background worker dispatch on keyword triggers
+
+**Documentation:** [Hooks Source](./src/cli/commands/hooks.ts)
 
 ---
 

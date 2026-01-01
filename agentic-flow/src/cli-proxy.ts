@@ -68,7 +68,7 @@ class AgenticFlowCLI {
     }
 
     // If no mode and no agent specified, show help
-    if (!options.agent && options.mode !== 'list' && !['config', 'agent-manager', 'mcp-manager', 'proxy', 'quic', 'claude-code', 'mcp', 'reasoningbank', 'federation'].includes(options.mode)) {
+    if (!options.agent && options.mode !== 'list' && !['config', 'agent-manager', 'mcp-manager', 'proxy', 'quic', 'claude-code', 'mcp', 'reasoningbank', 'federation', 'hooks', 'workers'].includes(options.mode)) {
       this.printHelp();
       process.exit(0);
     }
@@ -185,6 +185,58 @@ class AgenticFlowCLI {
       const federationArgs = process.argv.slice(3); // Skip 'node', 'cli-proxy.js', 'federation'
       await handleFederationCommand(federationArgs);
       process.exit(0);
+    }
+
+    if (options.mode === 'hooks') {
+      // Handle Hooks commands (intelligence, init, pre-edit, post-edit, etc.)
+      const { spawn } = await import('child_process');
+      const { resolve, dirname } = await import('path');
+      const { fileURLToPath } = await import('url');
+
+      const __filename = fileURLToPath(import.meta.url);
+      const __dirname = dirname(__filename);
+      const hooksPath = resolve(__dirname, './cli/commands/hooks.js');
+
+      // Pass all args after 'hooks' to hooks command
+      const hooksArgs = process.argv.slice(3);
+
+      const proc = spawn('node', [hooksPath, ...hooksArgs], {
+        stdio: 'inherit'
+      });
+
+      proc.on('exit', (code) => {
+        process.exit(code || 0);
+      });
+
+      process.on('SIGINT', () => proc.kill('SIGINT'));
+      process.on('SIGTERM', () => proc.kill('SIGTERM'));
+      return;
+    }
+
+    if (options.mode === 'workers') {
+      // Handle Workers commands (status, cleanup, dispatch-prompt, etc.)
+      const { spawn } = await import('child_process');
+      const { resolve, dirname } = await import('path');
+      const { fileURLToPath } = await import('url');
+
+      const __filename = fileURLToPath(import.meta.url);
+      const __dirname = dirname(__filename);
+      const workersPath = resolve(__dirname, './cli/commands/workers.js');
+
+      // Pass all args after 'workers' to workers command
+      const workersArgs = process.argv.slice(3);
+
+      const proc = spawn('node', [workersPath, ...workersArgs], {
+        stdio: 'inherit'
+      });
+
+      proc.on('exit', (code) => {
+        process.exit(code || 0);
+      });
+
+      process.on('SIGINT', () => proc.kill('SIGINT'));
+      process.on('SIGTERM', () => proc.kill('SIGTERM'));
+      return;
     }
 
     // Apply model optimization if requested

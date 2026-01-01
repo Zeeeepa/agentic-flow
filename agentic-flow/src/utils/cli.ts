@@ -1,7 +1,7 @@
 // CLI argument parsing and help utilities
 
 export interface CliOptions {
-  mode: 'agent' | 'parallel' | 'list' | 'mcp' | 'mcp-manager' | 'config' | 'agent-manager' | 'proxy' | 'quic' | 'claude-code' | 'reasoningbank' | 'federation';
+  mode: 'agent' | 'parallel' | 'list' | 'mcp' | 'mcp-manager' | 'config' | 'agent-manager' | 'proxy' | 'quic' | 'claude-code' | 'reasoningbank' | 'federation' | 'hooks' | 'workers';
   agent?: string;
   task?: string;
 
@@ -109,6 +109,18 @@ export function parseArgs(): CliOptions {
   // Check for reasoningbank command
   if (args[0] === 'reasoningbank') {
     options.mode = 'reasoningbank';
+    return options;
+  }
+
+  // Check for hooks command
+  if (args[0] === 'hooks') {
+    options.mode = 'hooks';
+    return options;
+  }
+
+  // Check for workers command
+  if (args[0] === 'workers') {
+    options.mode = 'workers';
     return options;
   }
 

@@ -627,12 +627,14 @@ console.log(lines.join('\\n'));
           console.log(`   📊 Created: ${statuslinePath}`);
         }
 
-        // Create settings
+        // Create settings with full capabilities
         const settings = {
           env: {
             AGENTIC_FLOW_INTELLIGENCE: 'true',
             AGENTIC_FLOW_LEARNING_RATE: '0.1',
-            AGENTIC_FLOW_MEMORY_BACKEND: 'agentdb'
+            AGENTIC_FLOW_MEMORY_BACKEND: 'agentdb',
+            AGENTIC_FLOW_WORKERS_ENABLED: 'true',
+            AGENTIC_FLOW_MAX_WORKERS: '10'
           },
           hooks: {
             PreToolUse: [
@@ -666,12 +668,41 @@ console.log(lines.join('\\n'));
                 ]
               }
             ],
+            PostToolUseFailure: [
+              {
+                matcher: 'Edit|Write',
+                hooks: [
+                  {
+                    type: 'command',
+                    command: 'npx agentic-flow hooks post-edit "$TOOL_INPUT_file_path" --fail --error "$ERROR_MESSAGE"'
+                  }
+                ]
+              }
+            ],
             SessionStart: [
               {
                 hooks: [
                   {
                     type: 'command',
                     command: 'npx agentic-flow hooks intelligence stats'
+                  }
+                ]
+              },
+              {
+                hooks: [
+                  {
+                    type: 'command',
+                    command: 'npx agentic-flow workers status --active --json 2>/dev/null || true'
+                  }
+                ]
+              }
+            ],
+            SessionEnd: [
+              {
+                hooks: [
+                  {
+                    type: 'command',
+                    command: 'npx agentic-flow workers cleanup --age 24 2>/dev/null || true'
                   }
                 ]
               }
@@ -685,6 +716,16 @@ console.log(lines.join('\\n'));
                     command: 'npx agentic-flow hooks intelligence stats'
                   }
                 ]
+              },
+              {
+                hooks: [
+                  {
+                    type: 'command',
+                    timeout: 5000,
+                    background: true,
+                    command: 'npx agentic-flow workers dispatch-prompt "$USER_PROMPT" --session "$SESSION_ID" --json 2>/dev/null || true'
+                  }
+                ]
               }
             ]
           },
@@ -692,7 +733,10 @@ console.log(lines.join('\\n'));
             allow: [
               'Bash(npx:*)',
               'Bash(agentic-flow:*)',
-              'mcp__agentic-flow'
+              'Bash(npm run:*)',
+              'mcp__agentic-flow',
+              'mcp__claude-flow',
+              'mcp__ruv-swarm'
             ]
           },
           statusLine: options.statusline !== false ? {
@@ -1070,3 +1114,10 @@ console.log(lines.join('\\n'));
 }
 
 export default createHooksCommand;
+
+// CLI entry point when run directly
+const isDirectRun = import.meta.url === `file://${process.argv[1]}`;
+if (isDirectRun) {
+  const hooks = createHooksCommand();
+  hooks.parse(process.argv);
+}

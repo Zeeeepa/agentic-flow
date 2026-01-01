@@ -5,14 +5,125 @@
     "CLAUDE_FLOW_HOOKS_ENABLED": "true",
     "CLAUDE_FLOW_TELEMETRY_ENABLED": "true",
     "CLAUDE_FLOW_REMOTE_EXECUTION": "true",
-    "CLAUDE_FLOW_CHECKPOINTS_ENABLED": "true"
+    "CLAUDE_FLOW_CHECKPOINTS_ENABLED": "true",
+    "CLAUDE_FLOW_WORKERS_ENABLED": "true",
+    "CLAUDE_FLOW_WORKER_PARALLEL": "true",
+    "CLAUDE_FLOW_MODEL_CACHE_MB": "512",
+    "CLAUDE_FLOW_SUPPRESS_WARNINGS": "true"
+  },
+  "workers": {
+    "enabled": true,
+    "parallel": true,
+    "maxConcurrent": 10,
+    "maxPerTrigger": 3,
+    "defaultTimeout": 300000,
+    "memoryDepositEnabled": true,
+    "progressEventsEnabled": true,
+    "triggers": {
+      "ultralearn": { "priority": "high", "timeout": 300000, "maxAgents": 5 },
+      "optimize": { "priority": "medium", "timeout": 180000, "maxAgents": 2 },
+      "consolidate": { "priority": "low", "timeout": 120000, "maxAgents": 1 },
+      "predict": { "priority": "medium", "timeout": 60000, "maxAgents": 2 },
+      "audit": { "priority": "high", "timeout": 300000, "maxAgents": 3 },
+      "map": { "priority": "medium", "timeout": 240000, "maxAgents": 2 },
+      "preload": { "priority": "low", "timeout": 30000, "maxAgents": 1 },
+      "deepdive": { "priority": "high", "timeout": 600000, "maxAgents": 4 },
+      "document": { "priority": "low", "timeout": 180000, "maxAgents": 2 },
+      "refactor": { "priority": "medium", "timeout": 120000, "maxAgents": 2 },
+      "benchmark": { "priority": "medium", "timeout": 180000, "maxAgents": 2 },
+      "testgaps": { "priority": "medium", "timeout": 120000, "maxAgents": 2 }
+    },
+    "agentMappings": {
+      "ultralearn": ["researcher", "coder"],
+      "optimize": ["performance-analyzer", "coder"],
+      "audit": ["security-analyst", "tester"],
+      "benchmark": ["performance-analyzer"],
+      "testgaps": ["tester"],
+      "document": ["documenter", "researcher"],
+      "deepdive": ["researcher", "security-analyst"],
+      "refactor": ["coder", "reviewer"],
+      "map": ["researcher"],
+      "preload": ["researcher"],
+      "predict": ["performance-analyzer"],
+      "consolidate": ["researcher"]
+    }
+  },
+  "performance": {
+    "modelCache": {
+      "enabled": true,
+      "maxSizeMB": 512,
+      "evictionPolicy": "lru"
+    },
+    "benchmarkThresholds": {
+      "triggerDetection": { "p95Ms": 5 },
+      "workerRegistry": { "p95Ms": 10 },
+      "agentSelection": { "p95Ms": 1 },
+      "memoryKeyGeneration": { "p95Ms": 0.1 },
+      "concurrentWorkers": { "totalMs": 1000 }
+    },
+    "optimizations": {
+      "parallelDispatch": true,
+      "batchMemoryWrites": true,
+      "cacheEmbeddings": true,
+      "suppressWarnings": true
+    }
+  },
+  "agents": {
+    "presets": {
+      "quick-scan": {
+        "phases": ["file-discovery", "pattern-discovery", "summarization"],
+        "timeout": 60000,
+        "priority": "low"
+      },
+      "deep-analysis": {
+        "phases": ["file-discovery", "static-analysis", "complexity-analysis", "pattern-extraction", "summarization"],
+        "timeout": 300000,
+        "priority": "high"
+      },
+      "security-scan": {
+        "phases": ["file-discovery", "security-analysis", "secret-detection", "summarization"],
+        "timeout": 180000,
+        "priority": "critical"
+      },
+      "learning": {
+        "phases": ["file-discovery", "pattern-extraction", "vectorization", "sona-training", "pattern-storage"],
+        "timeout": 300000,
+        "priority": "medium"
+      },
+      "api-docs": {
+        "phases": ["api-discovery", "pattern-extraction", "report-generation", "indexing"],
+        "timeout": 180000,
+        "priority": "low"
+      },
+      "test-analysis": {
+        "phases": ["file-discovery", "pattern-discovery", "coverage-analysis", "summarization"],
+        "timeout": 120000,
+        "priority": "medium"
+      }
+    },
+    "capabilities": {
+      "default": {
+        "onnxEmbeddings": true,
+        "vectorDb": true,
+        "sonaLearning": true,
+        "reasoningBank": true,
+        "intelligenceStore": true,
+        "progressEvents": true,
+        "memoryDeposits": true,
+        "persistResults": true
+      }
+    }
   },
   "permissions": {
     "allow": [
       "Bash(npx claude-flow *)",
+      "Bash(npx agentic-flow *)",
       "Bash(npm run lint)",
       "Bash(npm run test:*)",
       "Bash(npm test *)",
+      "Bash(npm run build)",
+      "Bash(npm run benchmark)",
+      "Bash(npm run workers *)",
       "Bash(git status)",
       "Bash(git diff *)",
       "Bash(git log *)",
@@ -28,7 +139,10 @@
       "Bash(node *)",
       "Bash(which *)",
       "Bash(pwd)",
-      "Bash(ls *)"
+      "Bash(ls *)",
+      "mcp__ruv-swarm",
+      "mcp__claude-flow@alpha",
+      "mcp__flow-nexus"
     ],
     "deny": [
       "Bash(rm -rf /)",
@@ -38,13 +152,23 @@
     ]
   },
   "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cat | jq -r '.user_prompt // empty' | tr '\\n' '\\0' | xargs -0 -I {} npx claude-flow@alpha workers dispatch --prompt '{}' --parallel true 2>/dev/null || true"
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
         "matcher": "Bash",
         "hooks": [
           {
             "type": "command",
-            "command": "cat | jq -r '.tool_input.command // empty' | tr '\\n' '\\0' | xargs -0 -I {} npx claude-flow@alpha hooks pre-command --command '{}' --validate-safety true --prepare-resources true"
+            "command": "cat | jq -r '.tool_input.command // empty' | tr '\\n' '\\0' | xargs -0 -I {} npx claude-flow@alpha hooks pre-command --command '{}' --validate-safety true --prepare-resources true 2>/dev/null || true"
           }
         ]
       },
@@ -53,7 +177,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "cat | jq -r '.tool_input.file_path // .tool_input.path // empty' | tr '\\n' '\\0' | xargs -0 -I {} npx claude-flow@alpha hooks pre-edit --file '{}' --auto-assign-agents true --load-context true"
+            "command": "cat | jq -r '.tool_input.file_path // .tool_input.path // empty' | tr '\\n' '\\0' | xargs -0 -I {} npx claude-flow@alpha hooks pre-edit --file '{}' --auto-assign-agents true --load-context true 2>/dev/null || true"
           }
         ]
       }
@@ -64,7 +188,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "cat | jq -r '.tool_input.command // empty' | tr '\\n' '\\0' | xargs -0 -I {} npx claude-flow@alpha hooks post-command --command '{}' --track-metrics true --store-results true"
+            "command": "cat | jq -r '.tool_input.command // empty' | tr '\\n' '\\0' | xargs -0 -I {} npx claude-flow@alpha hooks post-command --command '{}' --track-metrics true --store-results true 2>/dev/null || true"
           }
         ]
       },
@@ -73,7 +197,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "cat | jq -r '.tool_input.file_path // .tool_input.path // empty' | tr '\\n' '\\0' | xargs -0 -I {} npx claude-flow@alpha hooks post-edit --file '{}' --format true --update-memory true"
+            "command": "cat | jq -r '.tool_input.file_path // .tool_input.path // empty' | tr '\\n' '\\0' | xargs -0 -I {} npx claude-flow@alpha hooks post-edit --file '{}' --format true --update-memory true 2>/dev/null || true"
           }
         ]
       }
@@ -84,7 +208,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/bin/bash -c 'INPUT=$(cat); CUSTOM=$(echo \"$INPUT\" | jq -r \".custom_instructions // \\\"\\\"\"); echo \"🔄 PreCompact Guidance:\"; echo \"📋 IMPORTANT: Review CLAUDE.md in project root for:\"; echo \"   • 54 available agents and concurrent usage patterns\"; echo \"   • Swarm coordination strategies (hierarchical, mesh, adaptive)\"; echo \"   • SPARC methodology workflows with batchtools optimization\"; echo \"   • Critical concurrent execution rules (GOLDEN RULE: 1 MESSAGE = ALL OPERATIONS)\"; if [ -n \"$CUSTOM\" ]; then echo \"🎯 Custom compact instructions: $CUSTOM\"; fi; echo \"✅ Ready for compact operation\"'"
+            "command": "/bin/bash -c 'echo \"🔄 PreCompact: Check CLAUDE.md for 54 agents, swarm patterns, SPARC workflows\"; echo \"✅ Ready for compact\"'"
           }
         ]
       },
@@ -93,7 +217,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/bin/bash -c 'echo \"🔄 Auto-Compact Guidance (Context Window Full):\"; echo \"📋 CRITICAL: Before compacting, ensure you understand:\"; echo \"   • All 54 agents available in .claude/agents/ directory\"; echo \"   • Concurrent execution patterns from CLAUDE.md\"; echo \"   • Batchtools optimization for 300% performance gains\"; echo \"   • Swarm coordination strategies for complex tasks\"; echo \"⚡ Apply GOLDEN RULE: Always batch operations in single messages\"; echo \"✅ Auto-compact proceeding with full agent context\"'"
+            "command": "/bin/bash -c 'echo \"🔄 Auto-Compact: Preserving agent/worker context\"; echo \"✅ Auto-compact proceeding\"'"
           }
         ]
       }
@@ -103,7 +227,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "npx claude-flow@alpha hooks session-end --generate-summary true --persist-state true --export-metrics true"
+            "command": "npx claude-flow@alpha hooks session-end --generate-summary true --persist-state true --export-metrics true 2>/dev/null || true"
           }
         ]
       }

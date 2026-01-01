@@ -1,0 +1,201 @@
+# Custom Workers Configuration
+# Place this file at: ./workers.yaml or ./.agentic-flow/workers.yaml
+# Load with: agentic-flow workers load-config
+
+version: '1.0'
+
+workers:
+  # Authentication Scanner - Security-focused analysis
+  - name: auth-scanner
+    description: Scan for authentication patterns and security issues
+    triggers:
+      - auth-scan
+      - scan-auth
+      - security-auth
+    priority: high
+    timeout: 120000
+    cooldown: 10000
+    topicExtractor: 'auth(?:entication)?\s+(.+)'
+    phases:
+      - type: file-discovery
+        options:
+          include:
+            - '**/auth/**'
+            - '**/login/**'
+            - '**/session/**'
+            - '**/user/**'
+      - type: pattern-extraction
+        options:
+          patterns:
+            - jwt
+            - oauth
+            - session
+            - token
+            - bearer
+      - type: security-analysis
+      - type: secret-detection
+      - type: vectorization
+      - type: report-generation
+    capabilities:
+      onnxEmbeddings: true
+      vectorDb: true
+      persistResults: true
+    output:
+      format: detailed
+      includeSamples: true
+      maxSamples: 15
+
+  # Performance Analyzer - Code performance analysis
+  - name: perf-analyzer
+    description: Analyze code for performance bottlenecks
+    triggers:
+      - perf-scan
+      - analyze-perf
+      - performance
+    priority: medium
+    timeout: 90000
+    phases:
+      - type: file-discovery
+      - type: complexity-analysis
+      - type: performance-analysis
+      - type: call-graph
+      - type: summarization
+    capabilities:
+      onnxEmbeddings: false
+      progressEvents: true
+    output:
+      format: summary
+      includeMetrics: true
+
+  # API Documentation Scanner
+  - name: api-scanner
+    description: Discover and document API endpoints
+    triggers:
+      - api-scan
+      - scan-api
+      - find-endpoints
+    priority: medium
+    timeout: 60000
+    phases:
+      - type: file-discovery
+        options:
+          include:
+            - '**/routes/**'
+            - '**/api/**'
+            - '**/controllers/**'
+            - '**/handlers/**'
+      - type: api-discovery
+      - type: type-analysis
+      - type: report-generation
+    capabilities:
+      persistResults: true
+    output:
+      format: detailed
+      includeSamples: true
+
+  # Code Quality Scanner
+  - name: quality-scan
+    description: Comprehensive code quality analysis
+    triggers:
+      - quality
+      - code-quality
+      - lint-scan
+    priority: low
+    timeout: 120000
+    phases:
+      - type: file-discovery
+      - type: static-analysis
+      - type: code-smell-detection
+      - type: todo-extraction
+      - type: complexity-analysis
+      - type: summarization
+    capabilities:
+      progressEvents: true
+    output:
+      format: summary
+      includeSamples: true
+      maxSamples: 20
+
+  # Dependency Analyzer
+  - name: dep-analyzer
+    description: Analyze project dependencies and import structure
+    triggers:
+      - dep-scan
+      - analyze-deps
+      - imports
+    priority: low
+    timeout: 60000
+    phases:
+      - type: file-discovery
+      - type: dependency-discovery
+      - type: import-analysis
+      - type: graph-build
+      - type: summarization
+    capabilities:
+      vectorDb: true
+    output:
+      format: summary
+
+  # Test Coverage Scanner
+  - name: test-scanner
+    description: Analyze test files and coverage patterns
+    triggers:
+      - test-scan
+      - scan-tests
+      - coverage
+    priority: medium
+    timeout: 90000
+    phases:
+      - type: file-discovery
+        options:
+          include:
+            - '**/*.test.ts'
+            - '**/*.spec.ts'
+            - '**/*.test.js'
+            - '**/*.spec.js'
+            - '**/test/**'
+            - '**/tests/**'
+            - '**/__tests__/**'
+      - type: static-analysis
+      - type: pattern-extraction
+      - type: summarization
+    output:
+      format: detailed
+      includeFileList: true
+
+  # Learning Pattern Collector
+  - name: pattern-learner
+    description: Extract and learn patterns from codebase
+    triggers:
+      - learn-patterns
+      - pattern-learn
+      - extract-patterns
+    priority: low
+    timeout: 180000
+    phases:
+      - type: file-discovery
+      - type: pattern-extraction
+      - type: embedding-generation
+      - type: pattern-storage
+      - type: sona-training
+    capabilities:
+      onnxEmbeddings: true
+      vectorDb: true
+      sonaLearning: true
+      reasoningBank: true
+    output:
+      format: minimal
+
+settings:
+  defaultCapabilities:
+    progressEvents: true
+    memoryDeposits: true
+  defaultFileFilter:
+    exclude:
+      - node_modules/**
+      - dist/**
+      - build/**
+      - .git/**
+      - coverage/**
+  maxConcurrent: 5
+  debug: false
