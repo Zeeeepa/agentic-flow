@@ -11,13 +11,61 @@
  * - Persistent index storage
  * - Graceful fallback to brute-force
  * - Multi-distance metric support (cosine, euclidean, ip)
+ *
+ * Note: hnswlib-node is lazy-loaded to avoid import failures on systems
+ * without C++ build tools. Use forceWasm: true in AgentDB config to skip
+ * hnswlib entirely and use pure WASM backends.
  */
 
-import hnswlibNode from 'hnswlib-node';
 import * as fs from 'fs';
 import * as path from 'path';
 
-const { HierarchicalNSW } = hnswlibNode as any;
+// Lazy-loaded hnswlib-node to avoid import failures on systems without build tools
+let HierarchicalNSW: any = null;
+let hnswlibLoadAttempted = false;
+let hnswlibLoadError: Error | null = null;
+
+/**
+ * Lazy-load hnswlib-node module.
+ * Only loads when actually needed, avoiding import failures on systems without build tools.
+ */
+async function loadHnswlib(): Promise<boolean> {
+  if (hnswlibLoadAttempted) {
+    if (hnswlibLoadError) throw hnswlibLoadError;
+    return HierarchicalNSW !== null;
+  }
+  hnswlibLoadAttempted = true;
+
+  try {
+    const hnswlibNode = await import('hnswlib-node');
+    HierarchicalNSW = (hnswlibNode as any).default?.HierarchicalNSW
+      || (hnswlibNode as any).HierarchicalNSW;
+    return true;
+  } catch (error) {
+    hnswlibLoadError = new Error(
+      `hnswlib-node failed to load: ${(error as Error).message}\n` +
+      'This usually means native dependencies are missing.\n' +
+      'Solutions:\n' +
+      '  1. Install build tools and run: npm rebuild hnswlib-node\n' +
+      '  2. Use AgentDB with forceWasm: true to skip hnswlib entirely\n' +
+      '  3. Import from "agentdb/wasm" for WASM-only mode'
+    );
+    throw hnswlibLoadError;
+  }
+}
+
+/**
+ * Check if hnswlib-node is available without throwing.
+ * Useful for conditional logic before attempting to use HNSWIndex.
+ */
+export async function isHnswlibAvailable(): Promise<boolean> {
+  try {
+    await loadHnswlib();
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 // Database type from db-fallback
 type Database = any;
@@ -88,6 +136,10 @@ export class HNSWIndex {
   private lastBuildTime: number | null = null;
   private lastSearchTime: number | null = null;
 
+  // Deferred loading: constructor can't be async, so we mark for lazy load
+  private pendingPersistentLoad: boolean = false;
+  private initializePromise: Promise<void> | null = null;
+
   constructor(db: Database, config?: Partial<HNSWConfig>) {
     this.db = db;
     this.config = {
@@ -102,9 +154,31 @@ export class HNSWIndex {
       ...config,
     };
 
-    // Try to load existing index
+    // Mark for deferred loading (can't load in constructor as hnswlib is lazy-loaded)
     if (this.config.persistIndex && this.config.indexPath) {
-      this.loadIndex();
+      this.pendingPersistentLoad = true;
+    }
+  }
+
+  /**
+   * Initialize the index asynchronously.
+   * Call this after construction if you need to load a persisted index.
+   * This is automatically called by buildIndex() and search() if needed.
+   */
+  async initialize(): Promise<void> {
+    if (this.initializePromise) {
+      return this.initializePromise;
+    }
+
+    this.initializePromise = this.doInitialize();
+    return this.initializePromise;
+  }
+
+  private async doInitialize(): Promise<void> {
+    // Load hnswlib if we have a pending persistent load
+    if (this.pendingPersistentLoad && this.config.indexPath) {
+      this.pendingPersistentLoad = false;
+      await this.loadIndexAsync();
     }
   }
 
@@ -114,6 +188,12 @@ export class HNSWIndex {
   async buildIndex(tableName: string = 'pattern_embeddings'): Promise<void> {
     const start = Date.now();
     console.log(`[HNSWIndex] Building HNSW index from ${tableName}...`);
+
+    // Ensure any pending initialization is complete
+    await this.initialize();
+
+    // Lazy-load hnswlib-node (avoids import failures on systems without build tools)
+    await loadHnswlib();
 
     try {
       // Fetch all vectors from database
@@ -198,6 +278,9 @@ export class HNSWIndex {
       filters?: Record<string, any>;
     }
   ): Promise<HNSWSearchResult[]> {
+    // Ensure any pending initialization is complete (may load persisted index)
+    await this.initialize();
+
     if (!this.index || !this.indexBuilt) {
       throw new Error('Index not built. Call buildIndex() first.');
     }
@@ -347,15 +430,18 @@ export class HNSWIndex {
   }
 
   /**
-   * Load index from disk
+   * Load index from disk (async version for lazy loading)
    */
-  private loadIndex(): void {
+  private async loadIndexAsync(): Promise<void> {
     if (!this.config.indexPath || !fs.existsSync(this.config.indexPath)) {
       return;
     }
 
     try {
       console.log(`[HNSWIndex] Loading index from ${this.config.indexPath}...`);
+
+      // Lazy-load hnswlib-node first
+      await loadHnswlib();
 
       // Load HNSW index
       this.index = new HierarchicalNSW(this.config.metric, this.config.dimension);

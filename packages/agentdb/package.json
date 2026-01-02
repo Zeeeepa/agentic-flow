@@ -10,6 +10,7 @@
   },
   "exports": {
     ".": "./dist/src/index.js",
+    "./wasm": "./dist/src/wasm-loader.js",
     "./package.json": "./package.json",
     "./cli": "./dist/cli/agentdb-cli.js",
     "./wrappers": "./dist/src/wrappers/index.js",

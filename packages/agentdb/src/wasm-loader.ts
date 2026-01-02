@@ -1,20 +1,27 @@
 /**
- * AgentDB - Main Entry Point
+ * AgentDB WASM-Only Entry Point
  *
- * Frontier Memory Features with MCP Integration:
- * - Causal reasoning and memory graphs
- * - Reflexion memory with self-critique
- * - Skill library with automated learning
- * - Vector search with embeddings
- * - Reinforcement learning (9 algorithms)
+ * Use this entry point on systems without C++ build tools.
+ * Excludes hnswlib-node and provides pure WASM vector backends.
+ *
+ * Usage:
+ *   import { AgentDB } from 'agentdb/wasm';
+ *   const db = new AgentDB({ forceWasm: true });
+ *
+ * This entry point:
+ * - Uses RuVector (WASM-based) for vector search
+ * - Uses sql.js (WASM-based) for SQLite
+ * - Does NOT require any native module compilation
+ * - Works on Windows without Visual Studio Build Tools
+ * - Works in browsers and edge runtimes
  */
 
-// Main AgentDB class
+// Main AgentDB class (uses RuVector/WASM backends when forceWasm: true)
 export { AgentDB } from './core/AgentDB.js';
 import { AgentDB as AgentDBClass } from './core/AgentDB.js';
 export default AgentDBClass;
 
-// Core controllers
+// Core controllers (WASM-compatible)
 export { CausalMemoryGraph } from './controllers/CausalMemoryGraph.js';
 export { CausalRecall } from './controllers/CausalRecall.js';
 export { ExplainableRecall } from './controllers/ExplainableRecall.js';
@@ -28,9 +35,9 @@ export { ReasoningBank } from './controllers/ReasoningBank.js';
 export { EmbeddingService } from './controllers/EmbeddingService.js';
 export { EnhancedEmbeddingService } from './controllers/EnhancedEmbeddingService.js';
 
-// WASM acceleration and HNSW indexing
+// WASM-only vector search (no hnswlib-node)
 export { WASMVectorSearch } from './controllers/WASMVectorSearch.js';
-export { HNSWIndex, isHnswlibAvailable } from './controllers/HNSWIndex.js';
+// Note: HNSWIndex is NOT exported here - use the main entry point if you need it
 
 // Attention mechanisms
 export { AttentionService } from './controllers/AttentionService.js';
@@ -43,7 +50,7 @@ export { SelfAttentionController } from './controllers/attention/SelfAttentionCo
 export { CrossAttentionController } from './controllers/attention/CrossAttentionController.js';
 export { MultiHeadAttentionController } from './controllers/attention/MultiHeadAttentionController.js';
 
-// Database utilities
+// Database utilities (uses sql.js WASM fallback)
 export { createDatabase } from './db-fallback.js';
 
 // Optimizations
@@ -64,25 +71,20 @@ export {
 
 // Vector Quantization
 export {
-  // Types
   type QuantizationStats,
   type QuantizedVector,
   type ProductQuantizerConfig,
   type PQEncodedVector,
   type QuantizedVectorStoreConfig,
   type QuantizedSearchResult,
-  // Scalar Quantization
   quantize8bit,
   quantize4bit,
   dequantize8bit,
   dequantize4bit,
   calculateQuantizationError,
   getQuantizationStats,
-  // Product Quantization
   ProductQuantizer,
-  // Quantized Vector Store
   QuantizedVectorStore,
-  // Factory Functions
   createScalar8BitStore,
   createScalar4BitStore,
   createProductQuantizedStore,
@@ -102,32 +104,23 @@ export {
 
 // Benchmarking Suite
 export {
-  // Main Suite
   BenchmarkSuite,
-  // Base class for custom benchmarks
   Benchmark,
-  // Built-in benchmarks
   VectorInsertBenchmark,
   VectorSearchBenchmark,
   MemoryUsageBenchmark,
   ConcurrencyBenchmark,
   QuantizationBenchmark,
-  // CLI integration functions
   runBenchmarks,
   runSelectedBenchmarks,
-  // Formatting utilities
   formatReportAsMarkdown,
   formatComparisonAsMarkdown,
-  // Types
   type LatencyStats,
   type BenchmarkResult,
   type BenchmarkReport,
   type ComparisonReport,
   type BenchmarkConfig,
 } from './benchmark/index.js';
-
-// Re-export all controllers for convenience
-export * from './controllers/index.js';
 
 // Coordination - Multi-database synchronization
 export {
@@ -144,3 +137,26 @@ export {
   type StatusChangeCallback,
   type DistributedOperationResult,
 } from './coordination/index.js';
+
+// Vector Backends - WASM-only exports
+export type {
+  VectorBackend,
+  VectorConfig,
+  SearchResult,
+  SearchOptions,
+  VectorStats
+} from './backends/VectorBackend.js';
+
+export { RuVectorBackend } from './backends/ruvector/RuVectorBackend.js';
+export { RuVectorLearning } from './backends/ruvector/RuVectorLearning.js';
+// Note: HNSWLibBackend is NOT exported - use the main entry point if you need it
+
+export {
+  createBackend,
+  detectBackends,
+  getRecommendedBackend,
+  isBackendAvailable,
+  getInstallCommand
+} from './backends/factory.js';
+
+export type { BackendType, BackendDetection } from './backends/factory.js';
