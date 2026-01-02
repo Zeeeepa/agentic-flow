@@ -54,5 +54,31 @@ export {
   ValidationError,
 } from './security/input-validation.js';
 
+// Vector Quantization
+export {
+  // Types
+  type QuantizationStats,
+  type QuantizedVector,
+  type ProductQuantizerConfig,
+  type PQEncodedVector,
+  type QuantizedVectorStoreConfig,
+  type QuantizedSearchResult,
+  // Scalar Quantization
+  quantize8bit,
+  quantize4bit,
+  dequantize8bit,
+  dequantize4bit,
+  calculateQuantizationError,
+  getQuantizationStats,
+  // Product Quantization
+  ProductQuantizer,
+  // Quantized Vector Store
+  QuantizedVectorStore,
+  // Factory Functions
+  createScalar8BitStore,
+  createScalar4BitStore,
+  createProductQuantizedStore,
+} from './quantization/index.js';
+
 // Re-export all controllers for convenience
 export * from './controllers/index.js';

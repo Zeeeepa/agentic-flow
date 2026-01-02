@@ -1,6 +1,6 @@
 {
   "name": "agentic-flow",
-  "version": "2.0.1-alpha.49",
+  "version": "2.0.1-alpha.50",
   "description": "Production-ready AI agent orchestration platform with 66 specialized agents, 213 MCP tools, ReasoningBank learning memory, and autonomous multi-agent swarms. Built by @ruvnet with Claude Agent SDK, neural networks, memory persistence, GitHub integration, and distributed consensus protocols.",
   "type": "module",
   "main": "dist/index.js",
@@ -56,7 +56,8 @@
     "proxy": "node dist/proxy/anthropic-to-openrouter.js",
     "proxy:dev": "tsx src/proxy/anthropic-to-openrouter.ts",
     "proxy:quic": "node dist/proxy/quic-proxy.js",
-    "proxy:quic:dev": "tsx src/proxy/quic-proxy.ts"
+    "proxy:quic:dev": "tsx src/proxy/quic-proxy.ts",
+    "benchmark:embeddings": "tsx src/benchmarks/embeddings-benchmark.ts"
   },
   "keywords": [
     "ai",
