@@ -14,7 +14,9 @@
 
 import type { VectorBackend, VectorConfig } from './VectorBackend.js';
 import { RuVectorBackend } from './ruvector/RuVectorBackend.js';
-import { HNSWLibBackend } from './hnswlib/HNSWLibBackend.js';
+
+// Note: HNSWLibBackend is lazy-loaded to avoid import failures on systems
+// without build tools. The import happens in createHNSWLibBackend().
 
 export type BackendType = 'auto' | 'ruvector' | 'hnswlib';
 
@@ -96,6 +98,14 @@ export async function detectBackends(): Promise<BackendDetection> {
 }
 
 /**
+ * Lazy-load HNSWLibBackend to avoid import failures on systems without build tools
+ */
+async function createHNSWLibBackend(config: VectorConfig): Promise<VectorBackend> {
+  const { HNSWLibBackend } = await import('./hnswlib/HNSWLibBackend.js');
+  return new HNSWLibBackend(config);
+}
+
+/**
  * Create vector backend with automatic detection
  *
  * @param type - Backend type: 'auto', 'ruvector', or 'hnswlib'
@@ -128,7 +138,8 @@ export async function createBackend(
         'Install with: npm install hnswlib-node'
       );
     }
-    backend = new HNSWLibBackend(config);
+    // Lazy-load HNSWLibBackend to avoid module-level import failures
+    backend = await createHNSWLibBackend(config);
   } else {
     // Auto-detect best available backend
     if (detection.ruvector.core) {
@@ -149,7 +160,8 @@ export async function createBackend(
         if (detection.hnswlib) {
           console.log('[AgentDB] RuVector initialization failed, falling back to HNSWLib');
           console.log(`[AgentDB] Reason: ${errorMessage.split('\n')[0]}`);
-          backend = new HNSWLibBackend(config);
+          // Lazy-load HNSWLibBackend for fallback
+          backend = await createHNSWLibBackend(config);
           console.log('[AgentDB] Using HNSWLib backend (fallback)');
         } else {
           // No fallback available, re-throw error
@@ -157,7 +169,8 @@ export async function createBackend(
         }
       }
     } else if (detection.hnswlib) {
-      backend = new HNSWLibBackend(config);
+      // Lazy-load HNSWLibBackend when it's the only option
+      backend = await createHNSWLibBackend(config);
       console.log('[AgentDB] Using HNSWLib backend (fallback)');
     } else {
       throw new Error(
