@@ -66,22 +66,22 @@ const SETTINGS_TEMPLATE = {
     deniedTools: []
   },
   hooks: {
-    "pre-tool-use": [
+    PreToolUse: [
       {
-        matcher: "Edit|Write",
-        command: "npx agentic-flow@alpha hooks pre-edit $FILE"
+        matcher: "Edit|Write|MultiEdit",
+        hooks: ["npx agentic-flow@alpha hooks pre-edit"]
       }
     ],
-    "post-tool-use": [
+    PostToolUse: [
       {
-        matcher: "Edit|Write",
-        command: "npx agentic-flow@alpha hooks post-edit $FILE"
+        matcher: "Edit|Write|MultiEdit",
+        hooks: ["npx agentic-flow@alpha hooks post-edit"]
       }
     ],
-    "notification": [
+    Notification: [
       {
         matcher: ".*",
-        command: "npx agentic-flow@alpha hooks notify"
+        hooks: ["npx agentic-flow@alpha hooks notify"]
       }
     ]
   },
