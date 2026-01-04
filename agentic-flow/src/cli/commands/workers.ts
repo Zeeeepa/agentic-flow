@@ -223,9 +223,27 @@ export function createWorkersCommand(): Command {
         const registry = getWorkerRegistry();
         const governor = getResourceGovernor();
 
-        const registryStats = registry.getStats(options.timeframe);
-        const resourceStats = governor.getStats();
-        const availability = governor.getAvailability();
+        // Get stats with fallbacks for when db isn't available
+        let registryStats: any = { total: 0, byStatus: {}, byTrigger: {}, avgDuration: 0 };
+        try {
+          registryStats = registry.getStats(options.timeframe) || registryStats;
+        } catch {
+          // Database not available - use defaults
+        }
+
+        let resourceStats: any = { activeWorkers: 0, memoryUsage: { heapUsed: 0 } };
+        try {
+          resourceStats = governor.getStats() || resourceStats;
+        } catch {
+          // Resource governor not available
+        }
+
+        let availability: any = { usedSlots: 0, totalSlots: 10 };
+        try {
+          availability = governor.getAvailability() || availability;
+        } catch {
+          // Availability not available
+        }
 
         const stats = {
           ...registryStats,
@@ -934,24 +952,31 @@ function displayWorkerDashboard(workers: WorkerInfo[], resourceStats: any): void
 
 function displayStats(stats: any, timeframe: string): void {
   console.log(`\n\u26A1 Worker Statistics (${timeframe})\n`);
-  console.log(`Total Workers: ${stats.total}`);
-  console.log(`Average Duration: ${(stats.avgDuration / 1000).toFixed(1)}s`);
+  console.log(`Total Workers: ${stats.total ?? 0}`);
+  console.log(`Average Duration: ${((stats.avgDuration ?? 0) / 1000).toFixed(1)}s`);
 
-  console.log('\nBy Status:');
-  for (const [status, count] of Object.entries(stats.byStatus)) {
-    if ((count as number) > 0) {
-      console.log(`  ${getStatusIcon(status as WorkerStatus)} ${status}: ${count}`);
+  if (stats.byStatus && Object.keys(stats.byStatus).length > 0) {
+    console.log('\nBy Status:');
+    for (const [status, count] of Object.entries(stats.byStatus)) {
+      if ((count as number) > 0) {
+        console.log(`  ${getStatusIcon(status as WorkerStatus)} ${status}: ${count}`);
+      }
     }
   }
 
-  console.log('\nBy Trigger:');
-  for (const [trigger, count] of Object.entries(stats.byTrigger)) {
-    console.log(`  \u2022 ${trigger}: ${count}`);
+  if (stats.byTrigger && Object.keys(stats.byTrigger).length > 0) {
+    console.log('\nBy Trigger:');
+    for (const [trigger, count] of Object.entries(stats.byTrigger)) {
+      console.log(`  \u2022 ${trigger}: ${count}`);
+    }
   }
 
   console.log('\nResource Availability:');
-  console.log(`  Slots: ${stats.availability.usedSlots}/${stats.availability.totalSlots}`);
-  console.log(`  Memory: ${(stats.resources.memoryUsage.heapUsed / 1024 / 1024).toFixed(0)}MB`);
+  const usedSlots = stats.availability?.usedSlots ?? 0;
+  const totalSlots = stats.availability?.totalSlots ?? 10;
+  const heapUsed = stats.resources?.memoryUsage?.heapUsed ?? 0;
+  console.log(`  Slots: ${usedSlots}/${totalSlots}`);
+  console.log(`  Memory: ${(heapUsed / 1024 / 1024).toFixed(0)}MB`);
   console.log();
 }
 
