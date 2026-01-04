@@ -134,27 +134,49 @@ npx agentic-flow@alpha --list
 ### GitHub Integration
 \`github_swarm\`, \`repo_analyze\`, \`pr_enhance\`, \`issue_triage\`, \`code_review\`
 
-## 📋 Agent Coordination Protocol
+## 🧠 Self-Learning Hooks System
 
-### Every Agent Spawned via Task Tool MUST:
-
-**1️⃣ BEFORE Work:**
+### Available Hooks Commands:
 \`\`\`bash
-npx agentic-flow@alpha hooks pre-task --description "[task]"
-npx agentic-flow@alpha hooks session-restore --session-id "swarm-[id]"
+# Before editing - get context and agent suggestions
+npx agentic-flow@alpha hooks pre-edit <filePath>
+
+# After editing - record outcome for learning
+npx agentic-flow@alpha hooks post-edit <filePath> --success true
+
+# Before commands - assess risk
+npx agentic-flow@alpha hooks pre-command "<command>"
+
+# After commands - record outcome
+npx agentic-flow@alpha hooks post-command "<command>" --success true
+
+# Route task to optimal agent using learned patterns
+npx agentic-flow@alpha hooks route "<task description>"
+
+# Explain routing decision with transparency
+npx agentic-flow@alpha hooks explain "<task description>"
+
+# Bootstrap intelligence from repository
+npx agentic-flow@alpha hooks pretrain
+
+# Generate optimized agent configs from pretrain data
+npx agentic-flow@alpha hooks build-agents
+
+# View learning metrics dashboard
+npx agentic-flow@alpha hooks metrics
+
+# Transfer patterns from another project
+npx agentic-flow@alpha hooks transfer <sourceProject>
+
+# RuVector intelligence (SONA, MoE, HNSW 150x faster)
+npx agentic-flow@alpha hooks intelligence
 \`\`\`
 
-**2️⃣ DURING Work:**
-\`\`\`bash
-npx agentic-flow@alpha hooks post-edit --file "[file]" --memory-key "swarm/[agent]/[step]"
-npx agentic-flow@alpha hooks notify --message "[what was done]"
-\`\`\`
-
-**3️⃣ AFTER Work:**
-\`\`\`bash
-npx agentic-flow@alpha hooks post-task --task-id "[task]"
-npx agentic-flow@alpha hooks session-end --export-metrics true
-\`\`\`
+### Pretraining System (4-Step Pipeline):
+1. **RETRIEVE** - Top-k memory injection with MMR diversity
+2. **JUDGE** - LLM-as-judge trajectory evaluation
+3. **DISTILL** - Extract strategy memories from trajectories
+4. **CONSOLIDATE** - Dedup, detect contradictions, prune old patterns
 
 ## Performance Benefits
 
@@ -201,28 +223,73 @@ Never save working files, text/mds and tests to the root folder.
 
 const SETTINGS_TEMPLATE = {
   model: "claude-sonnet-4-20250514",
-  customInstructions: "Follow the project's CLAUDE.md guidelines",
+  customInstructions: "Follow the project's CLAUDE.md guidelines. Use concurrent execution for all operations.",
+  env: {
+    AGENTIC_FLOW_INTELLIGENCE: "true",
+    AGENTIC_FLOW_LEARNING_RATE: "0.1",
+    AGENTIC_FLOW_EPSILON: "0.1",
+    AGENTIC_FLOW_MEMORY_BACKEND: "agentdb"
+  },
   permissions: {
-    allowedTools: ["Read", "Write", "Edit", "Bash", "Glob", "Grep", "Task", "WebFetch", "WebSearch"],
-    deniedTools: []
+    allowedTools: ["Read", "Write", "Edit", "Bash", "Glob", "Grep", "Task", "WebFetch", "WebSearch", "TodoWrite", "LSP", "NotebookEdit"],
+    deniedTools: [],
+    allow: [
+      "Bash(npx:*)",
+      "Bash(agentic-flow:*)",
+      "Bash(npm run:*)",
+      "mcp__agentic-flow",
+      "mcp__claude-flow",
+      "mcp__ruv-swarm"
+    ]
   },
   hooks: {
     PreToolUse: [
       {
         matcher: "Edit|Write|MultiEdit",
-        hooks: [{ type: "command", command: "npx agentic-flow@alpha hooks pre-edit" }]
+        hooks: [{ type: "command", command: "npx agentic-flow@alpha hooks pre-edit \"$TOOL_INPUT_file_path\"" }]
+      },
+      {
+        matcher: "Bash",
+        hooks: [{ type: "command", command: "npx agentic-flow@alpha hooks pre-command \"$TOOL_INPUT_command\"" }]
       }
     ],
     PostToolUse: [
       {
         matcher: "Edit|Write|MultiEdit",
-        hooks: [{ type: "command", command: "npx agentic-flow@alpha hooks post-edit" }]
+        hooks: [{ type: "command", command: "npx agentic-flow@alpha hooks post-edit \"$TOOL_INPUT_file_path\" --success" }]
+      },
+      {
+        matcher: "Bash",
+        hooks: [{ type: "command", command: "npx agentic-flow@alpha hooks post-command \"$TOOL_INPUT_command\"" }]
       }
     ],
-    Notification: [
+    PostToolUseFailure: [
+      {
+        matcher: "Edit|Write|MultiEdit",
+        hooks: [{ type: "command", command: "npx agentic-flow@alpha hooks post-edit \"$TOOL_INPUT_file_path\" --fail --error \"$ERROR_MESSAGE\"" }]
+      }
+    ],
+    SessionStart: [
+      {
+        hooks: [{ type: "command", command: "npx agentic-flow@alpha hooks intelligence stats --json 2>/dev/null || true" }]
+      }
+    ],
+    SessionEnd: [
+      {
+        hooks: [{ type: "command", command: "npx agentic-flow@alpha hooks metrics --session --json 2>/dev/null || true" }]
+      }
+    ],
+    UserPromptSubmit: [
+      {
+        hooks: [
+          { type: "command", timeout: 3000, command: "npx agentic-flow@alpha hooks route \"$USER_PROMPT\" --json 2>/dev/null || true" }
+        ]
+      }
+    ],
+    Stop: [
       {
         matcher: ".*",
-        hooks: [{ type: "command", command: "npx agentic-flow@alpha hooks notify" }]
+        hooks: [{ type: "command", command: "npx agentic-flow@alpha hooks metrics --session 2>/dev/null || true" }]
       }
     ]
   },
@@ -234,7 +301,10 @@ const SETTINGS_TEMPLATE = {
     source: ".claude/commands",
     enabled: true
   },
-  statusline: ".claude/statusline.mjs",
+  statusLine: {
+    type: "command",
+    command: ".claude/statusline.sh"
+  },
   mcpServers: {
     "claude-flow": {
       command: "npx",
@@ -360,7 +430,7 @@ export async function handleInitCommand(args: string[]): Promise<void> {
       }
 
       // Copy individual files (settings.json is generated fresh with our template)
-      const individualFiles = ['mcp.json', 'statusline.mjs'];
+      const individualFiles = ['mcp.json', 'statusline.sh'];
       for (const file of individualFiles) {
         const srcFile = path.join(packageClaudeDir, file);
         const destFile = path.join(claudeDir, file);
@@ -415,7 +485,7 @@ export async function handleInitCommand(args: string[]): Promise<void> {
 📁 Created structure:
    .claude/
    ├── settings.json      # Claude Code settings (hooks, agents, skills, statusline)
-   ├── statusline.mjs     # Custom statusline (model, tokens, cost, swarm status)
+   ├── statusline.sh      # Custom statusline (model, tokens, cost, swarm status)
    ├── agents/            # 80+ agent definitions (coder, tester, reviewer, etc.)
    ├── commands/          # 100+ slash commands (swarm, github, sparc, etc.)
    ├── skills/            # Custom skills and workflows

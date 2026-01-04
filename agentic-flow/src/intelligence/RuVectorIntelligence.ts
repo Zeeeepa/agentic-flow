@@ -31,33 +31,87 @@
  *   - Background learning: Non-blocking
  */
 
-// Import from @ruvector/sona
-import { SonaEngine, type JsSonaConfig, type JsLearnedPattern } from '@ruvector/sona';
+// Optional imports - graceful fallback on Windows/platforms without native binaries
+let SonaEngine: any = null;
+let sonaAvailable = false;
 
-// Import from @ruvector/attention
-import {
-  MultiHeadAttention,
-  FlashAttention,
-  HyperbolicAttention,
-  MoEAttention,
-  GraphRoPeAttention,
-  DualSpaceAttention,
-  // Training (simplified - only AdamOptimizer needed)
-  AdamOptimizer,
-  // Utilities
-  computeAttentionAsync,
-  computeFlashAttentionAsync,
-  computeHyperbolicAttentionAsync,
-  // Hyperbolic math
-  poincareDistance,
-  projectToPoincareBall,
-  // Types
-  type MoEConfig,
-  AttentionType,
-} from '@ruvector/attention';
+let MultiHeadAttention: any = null;
+let FlashAttention: any = null;
+let HyperbolicAttention: any = null;
+let MoEAttention: any = null;
+let GraphRoPeAttention: any = null;
+let DualSpaceAttention: any = null;
+let AdamOptimizer: any = null;
+let computeAttentionAsync: any = null;
+let computeFlashAttentionAsync: any = null;
+let computeHyperbolicAttentionAsync: any = null;
+let poincareDistance: any = null;
+let projectToPoincareBall: any = null;
+let AttentionType: any = null;
+let attentionAvailable = false;
+
+// Try to load @ruvector/sona
+try {
+  const sonaModule = await import('@ruvector/sona');
+  SonaEngine = sonaModule.SonaEngine;
+  sonaAvailable = true;
+} catch {
+  console.warn('[RuVectorIntelligence] @ruvector/sona not available - self-learning disabled');
+}
+
+// Try to load @ruvector/attention
+try {
+  const attentionModule = await import('@ruvector/attention');
+  MultiHeadAttention = attentionModule.MultiHeadAttention;
+  FlashAttention = attentionModule.FlashAttention;
+  HyperbolicAttention = attentionModule.HyperbolicAttention;
+  MoEAttention = attentionModule.MoEAttention;
+  GraphRoPeAttention = attentionModule.GraphRoPeAttention;
+  DualSpaceAttention = attentionModule.DualSpaceAttention;
+  AdamOptimizer = attentionModule.AdamOptimizer;
+  computeAttentionAsync = attentionModule.computeAttentionAsync;
+  computeFlashAttentionAsync = attentionModule.computeFlashAttentionAsync;
+  computeHyperbolicAttentionAsync = attentionModule.computeHyperbolicAttentionAsync;
+  poincareDistance = attentionModule.poincareDistance;
+  projectToPoincareBall = attentionModule.projectToPoincareBall;
+  AttentionType = attentionModule.AttentionType;
+  attentionAvailable = true;
+} catch {
+  console.warn('[RuVectorIntelligence] @ruvector/attention not available - attention features disabled');
+}
 
 // Import from ruvector core (for HNSW)
 import ruvector from 'ruvector';
+
+// Export availability flags
+export { sonaAvailable, attentionAvailable };
+
+// Local type definitions (replaces imports from optional packages)
+export interface JsSonaConfig {
+  embeddingDim?: number;
+  hiddenDim?: number;
+  microLoraRank?: number;
+  baseLoraRank?: number;
+  ewcLambda?: number;
+  microLoraLr?: number;
+  baseLoraLr?: number;
+  patternClusters?: number;
+  [key: string]: any; // Allow additional properties
+}
+
+export interface JsLearnedPattern {
+  id: string;
+  pattern: number[];
+  confidence: number;
+  timestamp: number;
+}
+
+export interface MoEConfig {
+  numExperts?: number;
+  topK?: number;
+  routerDim?: number;
+  dim?: number;
+}
 
 /**
  * Intelligence Layer Configuration
@@ -188,18 +242,18 @@ export class RuVectorIntelligence {
   private initPromise: Promise<void> | null = null;
 
   // SONA Engine for self-learning
-  private sona: SonaEngine | null = null;
+  private sona: any = null;
 
   // Attention mechanisms
-  private multiHeadAttention: MultiHeadAttention | null = null;
-  private flashAttention: FlashAttention | null = null;
-  private hyperbolicAttention: HyperbolicAttention | null = null;
-  private moeAttention: MoEAttention | null = null;
-  private graphAttention: GraphRoPeAttention | null = null;
-  private dualSpaceAttention: DualSpaceAttention | null = null;
+  private multiHeadAttention: any = null;
+  private flashAttention: any = null;
+  private hyperbolicAttention: any = null;
+  private moeAttention: any = null;
+  private graphAttention: any = null;
+  private dualSpaceAttention: any = null;
 
   // Training (simplified - removed unused scheduler/loss)
-  private optimizer: AdamOptimizer | null = null;
+  private optimizer: any = null;
 
   // HNSW index for vector search
   private hnswIndex: any = null;

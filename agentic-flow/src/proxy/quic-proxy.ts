@@ -146,8 +146,8 @@ export class QuicEnabledProxy extends AnthropicToOpenRouterProxy {
           ? Array.from((options.headers as any).entries())
           : Object.entries(options.headers);
 
-        for (const [key, value] of headerEntries) {
-          headers[key] = value;
+        for (const entry of headerEntries as Array<[string, string]>) {
+          headers[entry[0]] = entry[1];
         }
       }
 

@@ -120,12 +120,15 @@ export const agentBoosterMCPHandlers = {
       // Auto-detect language from file extension if not provided
       const language = params.language || path.extname(params.target_filepath).slice(1);
 
-      // Apply edit using Agent Booster
+      // Apply edit using Agent Booster - use any for flexible signature
       const result = await booster.apply({
         code: originalCode,
         edit: params.code_edit,
-        language
-      });
+        language,
+        target_filepath: params.target_filepath,
+        instructions: params.code_edit,
+        code_edit: params.code_edit
+      } as any);
 
       // Write modified code if successful
       if (result.success) {
@@ -183,12 +186,15 @@ export const agentBoosterMCPHandlers = {
         // Auto-detect language
         const language = edit.language || path.extname(edit.target_filepath).slice(1);
 
-        // Apply edit using Agent Booster
+        // Apply edit using Agent Booster - use any for flexible signature
         const result = await booster.apply({
           code: originalCode,
           edit: edit.code_edit,
-          language
-        });
+          language,
+          target_filepath: edit.target_filepath,
+          instructions: edit.code_edit,
+          code_edit: edit.code_edit
+        } as any);
 
         // Write modified code if successful
         if (result.success) {

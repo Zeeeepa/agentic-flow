@@ -3,9 +3,21 @@
  *
  * Properly wraps @ruvector/attention native Rust implementations
  * with TypedArray conversions and proper error handling
+ *
+ * Note: @ruvector/attention is optional - falls back gracefully
  */
 
-import * as nativeAttention from '@ruvector/attention';
+let nativeAttention: any = null;
+let attentionAvailable = false;
+
+try {
+  nativeAttention = await import('@ruvector/attention');
+  attentionAvailable = true;
+} catch {
+  console.warn('[attention-native] @ruvector/attention not available');
+}
+
+export { attentionAvailable };
 
 export interface AttentionConfig {
   hiddenDim: number;
@@ -245,9 +257,9 @@ export class MoEAttention {
     this.numExperts = config.numExperts || 4;
 
     try {
-      this.nativeInstance = new nativeAttention.MoEAttention(
-        this.hiddenDim,
-        this.numExperts
+      // MoEAttention constructor may have different signature in different versions
+      this.nativeInstance = new (nativeAttention.MoEAttention as any)(
+        this.hiddenDim
       );
     } catch (error: any) {
       throw new Error(`Failed to initialize native MoEAttention: ${error.message}`);

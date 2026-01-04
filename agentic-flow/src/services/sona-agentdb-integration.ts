@@ -79,8 +79,8 @@ export class SONAAgentDBTrainer extends EventEmitter {
   async initialize(): Promise<void> {
     if (this.initialized) return;
 
-    // Initialize SONA engine
-    this.sonaEngine = SonaEngine.withConfig({
+    // Initialize SONA engine - use any for flexible typing
+    this.sonaEngine = (SonaEngine as any).withConfig?.({
       hiddenDim: this.config.hiddenDim,
       microLoraRank: this.config.microLoraRank,
       baseLoraRank: this.config.baseLoraRank,
@@ -88,16 +88,19 @@ export class SONAAgentDBTrainer extends EventEmitter {
       ewcLambda: this.config.ewcLambda,
       patternClusters: this.config.patternClusters,
       enableSimd: true
-    });
+    }) ?? new SonaEngine(this.config.hiddenDim);
 
-    // Initialize AgentDB with HNSW
-    this.db = await agentdb.open({
+    // Initialize AgentDB with HNSW - use constructor pattern for agentdb
+    this.db = await ((agentdb as any).open?.({
       path: this.config.dbPath,
       vectorDimensions: this.config.vectorDimensions,
       enableHNSW: this.config.enableHNSW,
       hnswM: this.config.hnswM,
       hnswEfConstruction: this.config.hnswEfConstruction
-    });
+    }) ?? new (agentdb as any)({
+      dimensions: this.config.vectorDimensions,
+      storagePath: this.config.dbPath
+    }));
 
     this.initialized = true;
     this.emit('initialized', { config: this.config });

@@ -9,7 +9,7 @@
  */
 
 import { WorkerInfo, WorkerTrigger, WorkerResults, WorkerContext } from './types.js';
-import { workerRegistry } from './worker-registry.js';
+import { getWorkerRegistry } from './worker-registry.js';
 import { modelCache } from '../utils/model-cache.js';
 
 // ============================================================================
@@ -580,7 +580,7 @@ export class WorkerAgentIntegration {
       modelCacheStats: {
         hits: cacheStats.hits,
         misses: cacheStats.misses,
-        hitRate: cacheStats.hitRate
+        hitRate: `${(cacheStats.hitRate * 100).toFixed(1)}%`
       }
     };
   }

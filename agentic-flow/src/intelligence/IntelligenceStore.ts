@@ -1,15 +1,11 @@
 /**
  * IntelligenceStore - SQLite persistence for RuVector intelligence layer
  *
- * Cross-platform (Linux, macOS, Windows) persistent storage for:
- * - Learning trajectories
- * - Routing patterns
- * - SONA adaptations
- * - HNSW vectors
+ * Uses sql.js (pure JS SQLite) as primary backend for cross-platform compatibility
+ * Falls back to better-sqlite3 only if sql.js fails
  */
 
-import Database from 'better-sqlite3';
-import { existsSync, mkdirSync } from 'fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { dirname, join } from 'path';
 import { homedir } from 'os';
 
@@ -57,22 +53,228 @@ export interface LearningStats {
   lastUpdated: number;
 }
 
+// Unified database interface
+interface DbInterface {
+  run(sql: string, params?: any[]): { lastInsertRowid: number; changes: number };
+  get<T>(sql: string, params?: any[]): T | undefined;
+  all<T>(sql: string, params?: any[]): T[];
+  exec(sql: string): void;
+  close(): void;
+}
+
+// sql.js wrapper
+class SqlJsWrapper implements DbInterface {
+  private db: any;
+  private dbPath: string;
+  private saveTimeout: NodeJS.Timeout | null = null;
+
+  constructor(db: any, dbPath: string) {
+    this.db = db;
+    this.dbPath = dbPath;
+  }
+
+  private scheduleSave(): void {
+    if (this.saveTimeout) {
+      clearTimeout(this.saveTimeout);
+    }
+    this.saveTimeout = setTimeout(() => {
+      this.saveNow();
+    }, 100); // Debounce saves
+  }
+
+  private saveNow(): void {
+    try {
+      const data = this.db.export();
+      const buffer = Buffer.from(data);
+      writeFileSync(this.dbPath, buffer);
+    } catch {
+      // Ignore save errors
+    }
+  }
+
+  run(sql: string, params?: any[]): { lastInsertRowid: number; changes: number } {
+    this.db.run(sql, params || []);
+    const lastId = this.db.exec('SELECT last_insert_rowid() as id')[0]?.values[0]?.[0] || 0;
+    const changes = this.db.getRowsModified();
+    this.scheduleSave();
+    return { lastInsertRowid: lastId as number, changes };
+  }
+
+  get<T>(sql: string, params?: any[]): T | undefined {
+    const stmt = this.db.prepare(sql);
+    if (params) stmt.bind(params);
+    if (stmt.step()) {
+      const columns = stmt.getColumnNames();
+      const values = stmt.get();
+      stmt.free();
+      const result: any = {};
+      columns.forEach((col: string, i: number) => {
+        result[col] = values[i];
+      });
+      return result;
+    }
+    stmt.free();
+    return undefined;
+  }
+
+  all<T>(sql: string, params?: any[]): T[] {
+    const results: T[] = [];
+    const stmt = this.db.prepare(sql);
+    if (params) stmt.bind(params);
+    while (stmt.step()) {
+      const columns = stmt.getColumnNames();
+      const values = stmt.get();
+      const row: any = {};
+      columns.forEach((col: string, i: number) => {
+        row[col] = values[i];
+      });
+      results.push(row);
+    }
+    stmt.free();
+    return results;
+  }
+
+  exec(sql: string): void {
+    this.db.exec(sql);
+    this.scheduleSave();
+  }
+
+  close(): void {
+    if (this.saveTimeout) {
+      clearTimeout(this.saveTimeout);
+    }
+    this.saveNow();
+    this.db.close();
+  }
+}
+
+// better-sqlite3 wrapper
+class BetterSqliteWrapper implements DbInterface {
+  private db: any;
+
+  constructor(db: any) {
+    this.db = db;
+  }
+
+  run(sql: string, params?: any[]): { lastInsertRowid: number; changes: number } {
+    const stmt = this.db.prepare(sql);
+    const result = params ? stmt.run(...params) : stmt.run();
+    return { lastInsertRowid: result.lastInsertRowid as number, changes: result.changes };
+  }
+
+  get<T>(sql: string, params?: any[]): T | undefined {
+    const stmt = this.db.prepare(sql);
+    return params ? stmt.get(...params) : stmt.get();
+  }
+
+  all<T>(sql: string, params?: any[]): T[] {
+    const stmt = this.db.prepare(sql);
+    return params ? stmt.all(...params) : stmt.all();
+  }
+
+  exec(sql: string): void {
+    this.db.exec(sql);
+  }
+
+  close(): void {
+    this.db.close();
+  }
+}
+
 export class IntelligenceStore {
-  private db: Database.Database;
+  private db: DbInterface | null = null;
+  private dbPath: string;
+  private initialized: boolean = false;
+  private initPromise: Promise<void> | null = null;
   private static instance: IntelligenceStore | null = null;
 
   private constructor(dbPath: string) {
+    this.dbPath = dbPath;
+  }
+
+  /**
+   * Initialize the database (async to support sql.js)
+   */
+  private async initialize(): Promise<void> {
+    if (this.initialized) return;
+    if (this.initPromise) return this.initPromise;
+
+    this.initPromise = this.doInitialize();
+    await this.initPromise;
+  }
+
+  private async doInitialize(): Promise<void> {
     // Ensure directory exists
-    const dir = dirname(dbPath);
+    const dir = dirname(this.dbPath);
     if (!existsSync(dir)) {
       mkdirSync(dir, { recursive: true });
     }
 
-    this.db = new Database(dbPath);
-    this.db.pragma('journal_mode = WAL'); // Better concurrent access
-    this.db.pragma('synchronous = NORMAL'); // Good balance of speed/safety
+    // Try sql.js first (pure JS, no native modules)
+    try {
+      const initSqlJs = (await import('sql.js')).default;
+      const SQL = await initSqlJs();
 
-    this.initSchema();
+      let db;
+      if (existsSync(this.dbPath)) {
+        const fileBuffer = readFileSync(this.dbPath);
+        db = new SQL.Database(fileBuffer);
+      } else {
+        db = new SQL.Database();
+      }
+
+      this.db = new SqlJsWrapper(db, this.dbPath);
+      this.initialized = true;
+      this.initSchema();
+      return;
+    } catch (e) {
+      // sql.js failed, try better-sqlite3
+    }
+
+    // Try better-sqlite3 as fallback
+    try {
+      const Database = (await import('better-sqlite3')).default;
+      const db = new Database(this.dbPath);
+      db.pragma('journal_mode = WAL');
+      db.pragma('synchronous = NORMAL');
+      this.db = new BetterSqliteWrapper(db);
+      this.initialized = true;
+      this.initSchema();
+      return;
+    } catch (e) {
+      // Both failed, use in-memory fallback
+    }
+
+    // Last resort: in-memory sql.js (won't persist but won't crash)
+    try {
+      const initSqlJs = (await import('sql.js')).default;
+      const SQL = await initSqlJs();
+      const db = new SQL.Database();
+      this.db = new SqlJsWrapper(db, this.dbPath);
+      this.initialized = true;
+      this.initSchema();
+      console.error('[IntelligenceStore] Warning: Using in-memory database (persistence disabled)');
+    } catch {
+      // Complete failure - create a no-op stub
+      this.db = {
+        run: () => ({ lastInsertRowid: 0, changes: 0 }),
+        get: () => undefined,
+        all: () => [],
+        exec: () => {},
+        close: () => {},
+      };
+      this.initialized = true;
+      console.error('[IntelligenceStore] Warning: Database unavailable, intelligence features disabled');
+    }
+  }
+
+  /**
+   * Ensure database is initialized before operations
+   */
+  private async ensureInitialized(): Promise<void> {
+    if (!this.initialized) {
+      await this.initialize();
+    }
   }
 
   /**
@@ -107,6 +309,8 @@ export class IntelligenceStore {
    * Initialize database schema
    */
   private initSchema(): void {
+    if (!this.db) return;
+
     this.db.exec(`
       -- Trajectories table
       CREATE TABLE IF NOT EXISTS trajectories (
@@ -160,14 +364,18 @@ export class IntelligenceStore {
 
       -- Initialize stats row if not exists
       INSERT OR IGNORE INTO stats (id) VALUES (1);
-
-      -- Indexes for faster queries
-      CREATE INDEX IF NOT EXISTS idx_trajectories_agent ON trajectories(agent);
-      CREATE INDEX IF NOT EXISTS idx_trajectories_outcome ON trajectories(outcome);
-      CREATE INDEX IF NOT EXISTS idx_patterns_task_type ON patterns(task_type);
-      CREATE INDEX IF NOT EXISTS idx_routings_agent ON routings(recommended_agent);
-      CREATE INDEX IF NOT EXISTS idx_routings_timestamp ON routings(timestamp);
     `);
+
+    // Create indexes separately (sql.js doesn't support CREATE INDEX IF NOT EXISTS in exec)
+    try {
+      this.db.exec(`CREATE INDEX IF NOT EXISTS idx_trajectories_agent ON trajectories(agent);`);
+      this.db.exec(`CREATE INDEX IF NOT EXISTS idx_trajectories_outcome ON trajectories(outcome);`);
+      this.db.exec(`CREATE INDEX IF NOT EXISTS idx_patterns_task_type ON patterns(task_type);`);
+      this.db.exec(`CREATE INDEX IF NOT EXISTS idx_routings_agent ON routings(recommended_agent);`);
+      this.db.exec(`CREATE INDEX IF NOT EXISTS idx_routings_timestamp ON routings(timestamp);`);
+    } catch {
+      // Indexes may already exist
+    }
   }
 
   // ============ Trajectory Methods ============
@@ -175,62 +383,67 @@ export class IntelligenceStore {
   /**
    * Start a new trajectory
    */
-  startTrajectory(taskDescription: string, agent: string): number {
-    const stmt = this.db.prepare(`
-      INSERT INTO trajectories (task_description, agent, start_time)
-      VALUES (?, ?, ?)
-    `);
-    const result = stmt.run(taskDescription, agent, Date.now());
+  async startTrajectory(taskDescription: string, agent: string): Promise<number> {
+    await this.ensureInitialized();
+    if (!this.db) return 0;
 
-    this.incrementStat('total_trajectories');
+    const result = this.db.run(
+      `INSERT INTO trajectories (task_description, agent, start_time) VALUES (?, ?, ?)`,
+      [taskDescription, agent, Date.now()]
+    );
 
-    return result.lastInsertRowid as number;
+    await this.incrementStat('total_trajectories');
+    return result.lastInsertRowid;
   }
 
   /**
    * Add step to trajectory
    */
-  addTrajectoryStep(trajectoryId: number): void {
-    const stmt = this.db.prepare(`
-      UPDATE trajectories SET steps = steps + 1 WHERE id = ?
-    `);
-    stmt.run(trajectoryId);
+  async addTrajectoryStep(trajectoryId: number): Promise<void> {
+    await this.ensureInitialized();
+    if (!this.db) return;
+
+    this.db.run(`UPDATE trajectories SET steps = steps + 1 WHERE id = ?`, [trajectoryId]);
   }
 
   /**
    * End trajectory with outcome
    */
-  endTrajectory(trajectoryId: number, outcome: 'success' | 'failure' | 'partial', metadata?: Record<string, any>): void {
-    const stmt = this.db.prepare(`
-      UPDATE trajectories
-      SET outcome = ?, end_time = ?, metadata = ?
-      WHERE id = ?
-    `);
-    stmt.run(outcome, Date.now(), metadata ? JSON.stringify(metadata) : null, trajectoryId);
+  async endTrajectory(trajectoryId: number, outcome: 'success' | 'failure' | 'partial', metadata?: Record<string, any>): Promise<void> {
+    await this.ensureInitialized();
+    if (!this.db) return;
+
+    this.db.run(
+      `UPDATE trajectories SET outcome = ?, end_time = ?, metadata = ? WHERE id = ?`,
+      [outcome, Date.now(), metadata ? JSON.stringify(metadata) : null, trajectoryId]
+    );
 
     if (outcome === 'success') {
-      this.incrementStat('successful_trajectories');
+      await this.incrementStat('successful_trajectories');
     }
   }
 
   /**
    * Get active trajectories (no end_time)
    */
-  getActiveTrajectories(): StoredTrajectory[] {
-    const stmt = this.db.prepare(`
-      SELECT * FROM trajectories WHERE end_time IS NULL
-    `);
-    return stmt.all() as StoredTrajectory[];
+  async getActiveTrajectories(): Promise<StoredTrajectory[]> {
+    await this.ensureInitialized();
+    if (!this.db) return [];
+
+    return this.db.all<StoredTrajectory>(`SELECT * FROM trajectories WHERE end_time IS NULL`);
   }
 
   /**
    * Get recent trajectories
    */
-  getRecentTrajectories(limit: number = 10): StoredTrajectory[] {
-    const stmt = this.db.prepare(`
-      SELECT * FROM trajectories ORDER BY start_time DESC LIMIT ?
-    `);
-    return stmt.all(limit) as StoredTrajectory[];
+  async getRecentTrajectories(limit: number = 10): Promise<StoredTrajectory[]> {
+    await this.ensureInitialized();
+    if (!this.db) return [];
+
+    return this.db.all<StoredTrajectory>(
+      `SELECT * FROM trajectories ORDER BY start_time DESC LIMIT ?`,
+      [limit]
+    );
   }
 
   // ============ Pattern Methods ============
@@ -238,44 +451,44 @@ export class IntelligenceStore {
   /**
    * Store a pattern
    */
-  storePattern(taskType: string, approach: string, embedding?: Float32Array): number {
-    const stmt = this.db.prepare(`
-      INSERT INTO patterns (task_type, approach, embedding)
-      VALUES (?, ?, ?)
-    `);
+  async storePattern(taskType: string, approach: string, embedding?: Float32Array): Promise<number> {
+    await this.ensureInitialized();
+    if (!this.db) return 0;
+
     const embeddingBuffer = embedding ? Buffer.from(embedding.buffer) : null;
-    const result = stmt.run(taskType, approach, embeddingBuffer);
+    const result = this.db.run(
+      `INSERT INTO patterns (task_type, approach, embedding) VALUES (?, ?, ?)`,
+      [taskType, approach, embeddingBuffer]
+    );
 
-    this.incrementStat('total_patterns');
-
-    return result.lastInsertRowid as number;
+    await this.incrementStat('total_patterns');
+    return result.lastInsertRowid;
   }
 
   /**
    * Update pattern usage
    */
-  updatePatternUsage(patternId: number, wasSuccessful: boolean): void {
-    const stmt = this.db.prepare(`
-      UPDATE patterns
-      SET usage_count = usage_count + 1,
-          success_rate = (success_rate * usage_count + ?) / (usage_count + 1),
-          updated_at = strftime('%s', 'now')
-      WHERE id = ?
-    `);
-    stmt.run(wasSuccessful ? 1 : 0, patternId);
+  async updatePatternUsage(patternId: number, wasSuccessful: boolean): Promise<void> {
+    await this.ensureInitialized();
+    if (!this.db) return;
+
+    this.db.run(
+      `UPDATE patterns SET usage_count = usage_count + 1, success_rate = (success_rate * usage_count + ?) / (usage_count + 1), updated_at = strftime('%s', 'now') WHERE id = ?`,
+      [wasSuccessful ? 1 : 0, patternId]
+    );
   }
 
   /**
    * Find patterns by task type
    */
-  findPatterns(taskType: string, limit: number = 5): StoredPattern[] {
-    const stmt = this.db.prepare(`
-      SELECT * FROM patterns
-      WHERE task_type LIKE ?
-      ORDER BY success_rate DESC, usage_count DESC
-      LIMIT ?
-    `);
-    return stmt.all(`%${taskType}%`, limit) as StoredPattern[];
+  async findPatterns(taskType: string, limit: number = 5): Promise<StoredPattern[]> {
+    await this.ensureInitialized();
+    if (!this.db) return [];
+
+    return this.db.all<StoredPattern>(
+      `SELECT * FROM patterns WHERE task_type LIKE ? ORDER BY success_rate DESC, usage_count DESC LIMIT ?`,
+      [`%${taskType}%`, limit]
+    );
   }
 
   // ============ Routing Methods ============
@@ -283,48 +496,49 @@ export class IntelligenceStore {
   /**
    * Record a routing decision
    */
-  recordRouting(task: string, recommendedAgent: string, confidence: number, latencyMs: number): number {
-    const stmt = this.db.prepare(`
-      INSERT INTO routings (task, recommended_agent, confidence, latency_ms)
-      VALUES (?, ?, ?, ?)
-    `);
-    const result = stmt.run(task, recommendedAgent, confidence, latencyMs);
+  async recordRouting(task: string, recommendedAgent: string, confidence: number, latencyMs: number): Promise<number> {
+    await this.ensureInitialized();
+    if (!this.db) return 0;
 
-    this.incrementStat('total_routings');
+    const result = this.db.run(
+      `INSERT INTO routings (task, recommended_agent, confidence, latency_ms) VALUES (?, ?, ?, ?)`,
+      [task, recommendedAgent, confidence, latencyMs]
+    );
 
-    return result.lastInsertRowid as number;
+    await this.incrementStat('total_routings');
+    return result.lastInsertRowid;
   }
 
   /**
    * Update routing outcome
    */
-  updateRoutingOutcome(routingId: number, wasSuccessful: boolean): void {
-    const stmt = this.db.prepare(`
-      UPDATE routings SET was_successful = ? WHERE id = ?
-    `);
-    stmt.run(wasSuccessful ? 1 : 0, routingId);
+  async updateRoutingOutcome(routingId: number, wasSuccessful: boolean): Promise<void> {
+    await this.ensureInitialized();
+    if (!this.db) return;
+
+    this.db.run(`UPDATE routings SET was_successful = ? WHERE id = ?`, [wasSuccessful ? 1 : 0, routingId]);
 
     if (wasSuccessful) {
-      this.incrementStat('successful_routings');
+      await this.incrementStat('successful_routings');
     }
   }
 
   /**
    * Get routing accuracy for an agent
    */
-  getAgentAccuracy(agent: string): { total: number; successful: number; accuracy: number } {
-    const stmt = this.db.prepare(`
-      SELECT
-        COUNT(*) as total,
-        SUM(was_successful) as successful
-      FROM routings
-      WHERE recommended_agent = ?
-    `);
-    const result = stmt.get(agent) as { total: number; successful: number };
+  async getAgentAccuracy(agent: string): Promise<{ total: number; successful: number; accuracy: number }> {
+    await this.ensureInitialized();
+    if (!this.db) return { total: 0, successful: 0, accuracy: 0 };
+
+    const result = this.db.get<{ total: number; successful: number }>(
+      `SELECT COUNT(*) as total, SUM(was_successful) as successful FROM routings WHERE recommended_agent = ?`,
+      [agent]
+    );
+
     return {
-      total: result.total || 0,
-      successful: result.successful || 0,
-      accuracy: result.total > 0 ? (result.successful || 0) / result.total : 0,
+      total: result?.total || 0,
+      successful: result?.successful || 0,
+      accuracy: result?.total ? (result.successful || 0) / result.total : 0,
     };
   }
 
@@ -333,9 +547,22 @@ export class IntelligenceStore {
   /**
    * Get all stats
    */
-  getStats(): LearningStats {
-    const stmt = this.db.prepare(`SELECT * FROM stats WHERE id = 1`);
-    const row = stmt.get() as any;
+  async getStats(): Promise<LearningStats> {
+    await this.ensureInitialized();
+    if (!this.db) {
+      return {
+        totalTrajectories: 0,
+        successfulTrajectories: 0,
+        totalRoutings: 0,
+        successfulRoutings: 0,
+        totalPatterns: 0,
+        sonaAdaptations: 0,
+        hnswQueries: 0,
+        lastUpdated: Date.now(),
+      };
+    }
+
+    const row = this.db.get<any>(`SELECT * FROM stats WHERE id = 1`);
 
     return {
       totalTrajectories: row?.total_trajectories || 0,
@@ -352,26 +579,28 @@ export class IntelligenceStore {
   /**
    * Increment a stat counter
    */
-  incrementStat(statName: string, amount: number = 1): void {
-    const stmt = this.db.prepare(`
-      UPDATE stats SET ${statName} = ${statName} + ?, last_updated = strftime('%s', 'now')
-      WHERE id = 1
-    `);
-    stmt.run(amount);
+  async incrementStat(statName: string, amount: number = 1): Promise<void> {
+    await this.ensureInitialized();
+    if (!this.db) return;
+
+    this.db.run(
+      `UPDATE stats SET ${statName} = ${statName} + ?, last_updated = strftime('%s', 'now') WHERE id = 1`,
+      [amount]
+    );
   }
 
   /**
    * Record SONA adaptation
    */
-  recordSonaAdaptation(): void {
-    this.incrementStat('sona_adaptations');
+  async recordSonaAdaptation(): Promise<void> {
+    await this.incrementStat('sona_adaptations');
   }
 
   /**
    * Record HNSW query
    */
-  recordHnswQuery(): void {
-    this.incrementStat('hnsw_queries');
+  async recordHnswQuery(): Promise<void> {
+    await this.incrementStat('hnsw_queries');
   }
 
   // ============ Utility Methods ============
@@ -379,13 +608,13 @@ export class IntelligenceStore {
   /**
    * Get summary for display (simplified for UI)
    */
-  getSummary(): {
+  async getSummary(): Promise<{
     trajectories: number;
     routings: number;
     patterns: number;
     operations: number;
-  } {
-    const stats = this.getStats();
+  }> {
+    const stats = await this.getStats();
 
     return {
       trajectories: stats.totalTrajectories,
@@ -398,26 +627,24 @@ export class IntelligenceStore {
   /**
    * Get detailed summary for reports
    */
-  getDetailedSummary(): {
+  async getDetailedSummary(): Promise<{
     trajectories: { total: number; active: number; successful: number };
     routings: { total: number; accuracy: number };
     patterns: number;
     operations: { sona: number; hnsw: number };
-  } {
-    const stats = this.getStats();
-    const activeCount = this.getActiveTrajectories().length;
+  }> {
+    const stats = await this.getStats();
+    const active = await this.getActiveTrajectories();
 
     return {
       trajectories: {
         total: stats.totalTrajectories,
-        active: activeCount,
+        active: active.length,
         successful: stats.successfulTrajectories,
       },
       routings: {
         total: stats.totalRoutings,
-        accuracy: stats.totalRoutings > 0
-          ? stats.successfulRoutings / stats.totalRoutings
-          : 0,
+        accuracy: stats.totalRoutings > 0 ? stats.successfulRoutings / stats.totalRoutings : 0,
       },
       patterns: stats.totalPatterns,
       operations: {
@@ -431,14 +658,21 @@ export class IntelligenceStore {
    * Close database connection
    */
   close(): void {
-    this.db.close();
+    if (this.db) {
+      this.db.close();
+      this.db = null;
+    }
+    this.initialized = false;
     IntelligenceStore.instance = null;
   }
 
   /**
    * Reset all data (for testing)
    */
-  reset(): void {
+  async reset(): Promise<void> {
+    await this.ensureInitialized();
+    if (!this.db) return;
+
     this.db.exec(`
       DELETE FROM trajectories;
       DELETE FROM patterns;

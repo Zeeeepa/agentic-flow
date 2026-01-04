@@ -2,9 +2,20 @@
  * ONNX Runtime Local Inference Provider for Phi-4
  *
  * Uses onnxruntime-node for true local CPU/GPU inference
+ * Falls back gracefully when native module isn't available (Windows)
  */
 
-import * as ort from 'onnxruntime-node';
+let ort: any = null;
+let ortAvailable = false;
+
+// Dynamic import for optional onnxruntime-node
+try {
+  ort = await import('onnxruntime-node');
+  ortAvailable = true;
+} catch {
+  console.warn('[ONNX] onnxruntime-node not available - local inference disabled');
+}
+
 import * as fs from 'fs';
 import * as path from 'path';
 import { get_encoding } from 'tiktoken';
@@ -33,7 +44,7 @@ export class ONNXLocalProvider implements LLMProvider {
   supportsTools = false;
   supportsMCP = false;
 
-  private session: ort.InferenceSession | null = null;
+  private session: any = null;
   private config: Required<ONNXLocalConfig>;
   private tokenizer: any = null;
   private tiktoken: any = null;
@@ -95,6 +106,10 @@ export class ONNXLocalProvider implements LLMProvider {
    */
   private async initializeSession(): Promise<void> {
     if (this.session) return;
+
+    if (!ortAvailable || !ort) {
+      throw new Error('onnxruntime-node not available - install with: npm install onnxruntime-node');
+    }
 
     try {
       // Ensure model is downloaded
@@ -170,20 +185,23 @@ export class ONNXLocalProvider implements LLMProvider {
     const numLayers = 32;
     const numKVHeads = 8;
     const headDim = 128; // 3072 / 24 = 128
-    const kvCache: Record<string, ort.Tensor> = {};
+    const kvCache: Record<string, any> = {};
+
+    // Get Tensor constructor - use any for flexible access
+    const TensorClass = (ort as any).Tensor;
 
     // Initialize empty cache for each layer (key and value)
     for (let i = 0; i < numLayers; i++) {
       // Empty cache: [batch_size, num_kv_heads, 0, head_dim]
       const emptyCache = new Float32Array(0);
 
-      kvCache[`past_key_values.${i}.key`] = new ort.Tensor(
+      kvCache[`past_key_values.${i}.key`] = new TensorClass(
         'float32',
         emptyCache,
         [batchSize, numKVHeads, 0, headDim]
       );
 
-      kvCache[`past_key_values.${i}.value`] = new ort.Tensor(
+      kvCache[`past_key_values.${i}.value`] = new TensorClass(
         'float32',
         emptyCache,
         [batchSize, numKVHeads, 0, headDim]
@@ -225,8 +243,11 @@ export class ONNXLocalProvider implements LLMProvider {
         const currentInputIds = step === 0 ? inputIds : [outputIds[outputIds.length - 1]];
         const currentSeqLen = currentInputIds.length;
 
+        // Get Tensor constructor - use any for flexible access
+        const TensorClass = (ort as any).Tensor;
+
         // Create input tensor for current step
-        const inputTensor = new ort.Tensor(
+        const inputTensor = new TensorClass(
           'int64',
           BigInt64Array.from(currentInputIds.map(BigInt)),
           [1, currentSeqLen]
@@ -234,14 +255,14 @@ export class ONNXLocalProvider implements LLMProvider {
 
         // Create attention mask for current step
         const totalSeqLen = allTokenIds.length;
-        const attentionMask = new ort.Tensor(
+        const attentionMask = new TensorClass(
           'int64',
           BigInt64Array.from(Array(totalSeqLen).fill(1n)),
           [1, totalSeqLen]
         );
 
         // Build feeds with input, attention mask, and KV cache
-        const feeds: Record<string, ort.Tensor> = {
+        const feeds: Record<string, any> = {
           input_ids: inputTensor,
           attention_mask: attentionMask,
           ...pastKVCache

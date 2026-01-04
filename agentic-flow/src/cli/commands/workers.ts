@@ -452,12 +452,15 @@ export function createWorkersCommand(): Command {
 
         console.log(`\n\u26A1 Running custom worker: ${worker.definition.name}\n`);
 
-        const context = {
+        const context: import('../../workers/types.js').WorkerContext = {
           workerId: `custom-${Date.now()}`,
-          sessionId: options.session,
-          trigger: nameOrTrigger,
-          topic: options.topic,
-          signal: new AbortController().signal
+          sessionId: options.session || `session-${Date.now()}`,
+          trigger: nameOrTrigger as import('../../workers/types.js').WorkerTrigger,
+          topic: options.topic || null,
+          startTime: Date.now(),
+          signal: new AbortController().signal,
+          onProgress: () => {},
+          onMemoryDeposit: () => {}
         };
 
         const results = await worker.execute(context);

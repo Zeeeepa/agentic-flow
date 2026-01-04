@@ -101,8 +101,14 @@ export function createCustomWorker(
       );
 
       // Build results
+      const completedCount = Array.from(result.results.values()).filter(r => r?.success).length;
       const results: WorkerResults = {
+        status: result.success ? 'complete' : 'failed',
         success: result.success,
+        completedPhases: completedCount,
+        totalPhases: definition.phases.length,
+        memoryKeys: [],
+        duration: Date.now() - startTime,
         data: buildResultsData(result.phaseContext, result.results, output)
       };
 
@@ -127,7 +133,13 @@ export function createCustomWorker(
       return results;
     } catch (error) {
       return {
+        status: 'failed' as const,
         success: false,
+        completedPhases: 0,
+        totalPhases: definition.phases.length,
+        memoryKeys: [],
+        duration: Date.now() - startTime,
+        error: error instanceof Error ? error.message : 'Worker execution failed',
         data: {
           error: error instanceof Error ? error.message : 'Worker execution failed',
           executionTimeMs: Date.now() - startTime
@@ -391,7 +403,13 @@ export class CustomWorkerManager {
     const worker = this.get(nameOrTrigger);
     if (!worker) {
       return {
+        status: 'failed' as const,
         success: false,
+        completedPhases: 0,
+        totalPhases: 0,
+        memoryKeys: [],
+        duration: 0,
+        error: `Custom worker not found: ${nameOrTrigger}`,
         data: { error: `Custom worker not found: ${nameOrTrigger}` }
       };
     }

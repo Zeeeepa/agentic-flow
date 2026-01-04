@@ -85,10 +85,10 @@ export class SupabaseFederationAdapterDebug {
       }
 
       const duration = Date.now() - startTime;
-      this.debug.logConnection('initialize_complete', { duration }, duration);
+      this.debug.logConnection('initialize_complete', { duration });
     } catch (error) {
       const duration = Date.now() - startTime;
-      this.debug.logConnection('initialize_error', { duration }, duration, error as Error);
+      this.debug.logConnection('initialize_error', { duration, error: String(error) });
       throw error;
     }
   }
@@ -480,7 +480,7 @@ export class SupabaseFederationAdapterDebug {
     this.debug.close();
 
     const duration = Date.now() - startTime;
-    this.debug.logConnection('close_complete', {}, duration);
+    this.debug.logConnection('close_complete', { duration });
   }
 }
 

@@ -134,12 +134,15 @@ export class AgentBoosterMigration {
     try {
       const bytesProcessed = Buffer.byteLength(edit.newContent, 'utf8');
 
-      // Call REAL Agent Booster WASM engine
+      // Call REAL Agent Booster WASM engine - use any for flexible signature
       const result = await this.boosterEngine.apply({
         code: edit.oldContent,
         edit: edit.newContent,
-        language: edit.language
-      });
+        language: edit.language,
+        target_filepath: edit.filePath || '',
+        instructions: edit.newContent,
+        code_edit: edit.newContent
+      } as any);
 
       // Write the edit if successful
       if (result.success && edit.filePath) {

@@ -536,7 +536,7 @@ export async function routeTaskIntelligent(
 
   // Record routing in SQLite for persistence
   const store = getStore();
-  store.recordRouting(
+  await store.recordRouting(
     task,
     bestResult.agentId,
     Math.min(0.95, bestResult.confidence),
@@ -585,7 +585,7 @@ export async function beginTaskTrajectory(
   const trajectoryId = result.value;
 
   // Persist to SQLite
-  const dbId = store.startTrajectory(task, agent);
+  const dbId = await store.startTrajectory(task, agent);
 
   // Track metadata in memory (for fast access)
   activeTrajectories.set(trajectoryId, {
@@ -620,7 +620,7 @@ export async function recordTrajectoryStep(
     meta.steps++;
 
     // Persist step to SQLite
-    store.addTrajectoryStep(meta.dbId);
+    await store.addTrajectoryStep(meta.dbId);
 
     // Generate activations from context
     const activations = new Array(256).fill(0).map(() => Math.random() * 0.1);
@@ -656,7 +656,7 @@ export async function endTaskTrajectory(
 
   // Persist to SQLite
   const outcome_type = success ? 'success' : 'failure';
-  store.endTrajectory(meta.dbId, outcome_type, { quality, steps: meta.steps });
+  await store.endTrajectory(meta.dbId, outcome_type, { quality, steps: meta.steps });
 
   // End trajectory and trigger learning
   const outcome = intelligence.endTrajectory(trajectoryId, success, quality);
@@ -788,7 +788,7 @@ export async function getIntelligenceStats(): Promise<{
   };
 }> {
   const store = getStore();
-  const persistedStats = store.getSummary();
+  const persistedStats = await store.getSummary();
   const compressionStats = getCompressionStats();
   const multiAlgorithmStats = await getMultiAlgorithmStats();
 

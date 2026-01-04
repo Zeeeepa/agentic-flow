@@ -5,7 +5,7 @@
  * This module provides the native runner wrapper and adapters.
  */
 
-import { WorkerContext } from './types.js';
+import { WorkerContext, WorkerTrigger } from './types.js';
 import { PhaseResult } from './custom-worker-config.js';
 import {
   UnifiedPhaseContext,
@@ -101,11 +101,13 @@ for (const phaseName of consolidatedToNative) {
       execute: async (context: NativePhaseContext): Promise<NativePhaseResult> => {
         const workerContext: WorkerContext = {
           workerId: 'native-runner',
-          trigger: 'native',
-          topic: '',
-          priority: 'normal',
-          startTime: new Date(),
-          signal: new AbortController().signal
+          trigger: 'optimize' as WorkerTrigger,
+          topic: null,
+          sessionId: `native-${Date.now()}`,
+          startTime: Date.now(),
+          signal: new AbortController().signal,
+          onProgress: () => {},
+          onMemoryDeposit: () => {}
         };
 
         const phaseContext = createUnifiedContext();

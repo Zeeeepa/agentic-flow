@@ -260,6 +260,31 @@ export class TriggerDetector {
   }
 
   /**
+   * Register a custom trigger dynamically
+   */
+  registerTrigger(config: {
+    keyword: string;
+    priority?: WorkerPriority;
+    description?: string;
+    timeout?: number;
+    cooldown?: number;
+    topicExtractor?: RegExp;
+  }): void {
+    const keyword = config.keyword as WorkerTrigger;
+    const triggerConfig: TriggerConfig = {
+      keyword,
+      worker: config.keyword,
+      priority: config.priority || 'medium',
+      maxAgents: 2,
+      timeout: config.timeout || 120000,
+      cooldown: config.cooldown || 5000,
+      topicExtractor: config.topicExtractor || null,
+      description: config.description || `Custom trigger: ${config.keyword}`
+    };
+    TRIGGER_CONFIGS.set(keyword, triggerConfig);
+  }
+
+  /**
    * Check if a string contains any trigger keywords
    * Faster than full detect() when you just need boolean check
    */

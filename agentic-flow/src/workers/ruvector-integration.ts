@@ -120,11 +120,8 @@ export class RuVectorWorkerIntegration extends EventEmitter {
         // Initialize SONA engine if available
         if (this.config.enableSona && ruvector.SonaEngine) {
           try {
-            this.sonaService = new ruvector.SonaEngine({
-              embeddingDim: this.config.embeddingDim,
-              trajectoryCapacity: 1000,
-              enableAdaptation: true
-            });
+            // SonaEngine constructor signature varies by version - use any for compatibility
+            this.sonaService = new (ruvector.SonaEngine as any)(this.config.embeddingDim);
             this.emit('module:loaded', { module: 'sona' });
           } catch (e) {
             // SONA is optional
@@ -134,13 +131,14 @@ export class RuVectorWorkerIntegration extends EventEmitter {
         // Initialize VectorDB if available (may require native bindings)
         if (this.config.enableReasoningBank && ruvector.VectorDb) {
           try {
-            // VectorDb requires 'dimensions' (plural) parameter for native bindings
-            this.reasoningBank = new ruvector.VectorDb({
+            // VectorDb constructor signature varies by version - use any for compatibility
+            this.reasoningBank = new (ruvector.VectorDb as any)({
               dimensions: this.config.embeddingDim,
               storagePath: '.agentic-flow/vectors.db',
-              maxElements: 10000,
-              efConstruction: this.config.hnswEfConstruction,
-              M: this.config.hnswM
+              hnswConfig: {
+                efConstruction: this.config.hnswEfConstruction,
+                M: this.config.hnswM
+              }
             });
             this.emit('module:loaded', { module: 'reasoningbank' });
           } catch (e) {

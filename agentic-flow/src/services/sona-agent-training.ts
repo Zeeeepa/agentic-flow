@@ -13,6 +13,7 @@ export interface AgentConfig {
   purpose: 'simple' | 'complex' | 'diverse';
   hiddenDim?: number;
   microLoraRank?: number;
+  microLoraLr?: number;
   baseLoraRank?: number;
   patternClusters?: number;
   trajectoryCapacity?: number;

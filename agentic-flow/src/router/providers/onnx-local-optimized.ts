@@ -7,9 +7,19 @@
  * - KV cache pooling for 20-30% faster generation
  * - Better generation parameters for code tasks
  * - System prompt caching
+ *
+ * Note: onnxruntime-node is optional - will error if not installed
  */
 
-import * as ort from 'onnxruntime-node';
+let ort: any = null;
+
+// Dynamic import for optional onnxruntime-node
+try {
+  ort = await import('onnxruntime-node');
+} catch {
+  // Will be handled at runtime
+}
+
 import { get_encoding } from 'tiktoken';
 import { ensurePhi4Model, ModelDownloader } from '../../utils/model-downloader.js';
 import type {

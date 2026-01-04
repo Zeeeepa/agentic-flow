@@ -56,6 +56,28 @@ export function hasSQLite(): boolean {
 }
 
 /**
+ * Check if sql.js (WASM SQLite) is available
+ */
+export function hasSqlJs(): boolean {
+  try {
+    require.resolve('sql.js');
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Get best available SQLite implementation
+ * Priority: better-sqlite3 > sql.js > none
+ */
+export function getSQLiteImplementation(): 'better-sqlite3' | 'sql.js' | 'none' {
+  if (hasSQLite()) return 'better-sqlite3';
+  if (hasSqlJs()) return 'sql.js';
+  return 'none';
+}
+
+/**
  * Create ReasoningBank instance with optimal backend for current environment
  *
  * @param dbName - Database name (used differently by each backend)
@@ -90,13 +112,29 @@ export async function createOptimalReasoningBank(
   }
 
   if (backend === 'nodejs') {
+    const sqliteImpl = getSQLiteImplementation();
+
+    if (options.verbose) {
+      console.log(`[ReasoningBank] SQLite implementation: ${sqliteImpl}`);
+    }
+
+    // If better-sqlite3 not available, fallback to WASM/sql.js
+    if (sqliteImpl === 'none' || sqliteImpl === 'sql.js') {
+      if (options.verbose) {
+        console.log(`[ReasoningBank] Native SQLite not available, using WASM backend`);
+      }
+      // Use WASM backend as fallback (works on Windows without native compilation)
+      const { createReasoningBank } = await import('./wasm-adapter.js');
+      return await createReasoningBank(dbName);
+    }
+
     // Import Node.js backend (SQLite)
     const reasoningBankModule = await import('./index.js');
 
     const dbPath = options.dbPath || `.swarm/${dbName}.db`;
 
     if (options.verbose) {
-      console.log(`[ReasoningBank] Using Node.js backend with SQLite`);
+      console.log(`[ReasoningBank] Using Node.js backend with better-sqlite3`);
       console.log(`[ReasoningBank] Database path: ${dbPath}`);
     }
 
@@ -152,14 +190,18 @@ export function validateEnvironment(): {
   valid: boolean;
   warnings: string[];
   backend: 'nodejs' | 'wasm';
+  sqliteImpl: 'better-sqlite3' | 'sql.js' | 'none';
 } {
   const backend = getRecommendedBackend();
+  const sqliteImpl = getSQLiteImplementation();
   const warnings: string[] = [];
   let valid = true;
 
-  if (backend === 'nodejs' && !hasSQLite()) {
-    warnings.push('better-sqlite3 not found - database operations will fail');
-    valid = false;
+  if (backend === 'nodejs' && sqliteImpl === 'none') {
+    warnings.push('No SQLite implementation available - will use WASM fallback');
+    warnings.push('Install sql.js for persistence: npm install sql.js');
+  } else if (backend === 'nodejs' && sqliteImpl === 'sql.js') {
+    warnings.push('Using sql.js (WASM) instead of better-sqlite3 - this is normal on Windows');
   }
 
   if (backend === 'wasm' && typeof window !== 'undefined' && !hasIndexedDB()) {
@@ -172,7 +214,7 @@ export function validateEnvironment(): {
     warnings.push('Consider using Node.js backend for persistence');
   }
 
-  return { valid, warnings, backend };
+  return { valid, warnings, backend, sqliteImpl };
 }
 
 // Export validation helper for use in initialization

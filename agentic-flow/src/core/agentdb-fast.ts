@@ -86,11 +86,11 @@ export class AgentDBFast extends EventEmitter {
     if (this.initialized) return;
 
     try {
-      // Create AgentDB instance
+      // Create AgentDB instance - use any for flexible config
       this.db = new AgentDB({
-        path: this.config.path,
-        dimensions: this.config.vectorDimensions
-      });
+        dimensions: this.config.vectorDimensions,
+        storagePath: this.config.path
+      } as any);
 
       await this.db.initialize();
 

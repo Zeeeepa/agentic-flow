@@ -10,7 +10,7 @@
  */
 
 import { WorkerTrigger, WorkerInfo } from './types.js';
-import { workerRegistry } from './worker-registry.js';
+import { getWorkerRegistry } from './worker-registry.js';
 import { workerAgentIntegration } from './worker-agent-integration.js';
 import { modelCache } from '../utils/model-cache.js';
 
@@ -129,12 +129,13 @@ export class WorkerBenchmarks {
     const memStart = getMemoryUsageMB();
 
     // Import detector dynamically to avoid circular deps
-    const { triggerDetector } = await import('./trigger-detector.js');
+    const { getTriggerDetector } = await import('./trigger-detector.js');
+    const detector = getTriggerDetector();
 
     for (let i = 0; i < iterations; i++) {
       const prompt = prompts[i % prompts.length];
       const start = performance.now();
-      triggerDetector.detect(prompt);
+      detector.detect(prompt);
       latencies.push(performance.now() - start);
     }
 
@@ -185,7 +186,7 @@ export class WorkerBenchmarks {
     for (let i = 0; i < iterations; i++) {
       const trigger = triggers[i % triggers.length];
       const start = performance.now();
-      const workerId = workerRegistry.create(trigger, sessionId, `topic-${i}`);
+      const workerId = getWorkerRegistry().create(trigger, sessionId, `topic-${i}`);
       createLatencies.push(performance.now() - start);
       workerIds.push(workerId);
     }
@@ -193,14 +194,14 @@ export class WorkerBenchmarks {
     // Benchmark gets
     for (const workerId of workerIds) {
       const start = performance.now();
-      workerRegistry.get(workerId);
+      getWorkerRegistry().get(workerId);
       getLatencies.push(performance.now() - start);
     }
 
     // Benchmark updates
     for (const workerId of workerIds) {
       const start = performance.now();
-      workerRegistry.updateStatus(workerId, 'running', { progress: 50 });
+      getWorkerRegistry().updateStatus(workerId, 'running', { progress: 50 });
       updateLatencies.push(performance.now() - start);
     }
 
@@ -211,7 +212,7 @@ export class WorkerBenchmarks {
     // Cleanup
     for (const workerId of workerIds) {
       try {
-        workerRegistry.updateStatus(workerId, 'complete');
+        getWorkerRegistry().updateStatus(workerId, 'complete');
       } catch {
         // Ignore cleanup errors
       }
@@ -356,7 +357,7 @@ export class WorkerBenchmarks {
     const createPromises = Array.from({ length: workerCount }, (_, i) =>
       Promise.resolve().then(() => {
         const trigger = triggers[i % triggers.length];
-        return workerRegistry.create(trigger, sessionId, `concurrent-${i}`);
+        return getWorkerRegistry().create(trigger, sessionId, `concurrent-${i}`);
       })
     );
 
@@ -366,7 +367,7 @@ export class WorkerBenchmarks {
     // Simulate concurrent status updates
     const updatePromises = workerIds.map((id, i) =>
       Promise.resolve().then(() => {
-        workerRegistry.updateStatus(id, 'running', { progress: i * 10 });
+        getWorkerRegistry().updateStatus(id, 'running', { progress: i * 10 });
       })
     );
 
@@ -378,7 +379,7 @@ export class WorkerBenchmarks {
     // Cleanup
     for (const workerId of workerIds) {
       try {
-        workerRegistry.updateStatus(workerId, 'complete');
+        getWorkerRegistry().updateStatus(workerId, 'complete');
       } catch {
         // Ignore
       }

@@ -387,4 +387,5 @@ async function runBenchmarks() {
 // Run if executed directly
 runBenchmarks().catch(console.error);
 
-export { runBenchmarks, benchmark, BenchmarkResult };
+export { runBenchmarks, benchmark };
+export type { BenchmarkResult };

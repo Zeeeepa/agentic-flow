@@ -7,10 +7,22 @@
  * - TypeScript-first type safety
  * - Error handling and validation
  *
+ * Note: AgentDB is optional - falls back gracefully on Windows
+ *
  * @module agentdb-wrapper
  */
 
-import { AgentDB } from 'agentdb';
+let AgentDB: any = null;
+let agentdbAvailable = false;
+
+try {
+  const mod = await import('agentdb');
+  AgentDB = mod.AgentDB;
+  agentdbAvailable = true;
+} catch {
+  console.warn('[AgentDB] Not available - some features disabled');
+}
+
 import type {
   AgentDBConfig,
   VectorEntry,
@@ -52,7 +64,7 @@ import type {
  * ```
  */
 export class AgentDBWrapper {
-  private agentDB!: AgentDB;
+  private agentDB!: any;
   private config: AgentDBConfig;
   private initialized = false;
   private dimension: number;
@@ -105,6 +117,10 @@ export class AgentDBWrapper {
   async initialize(): Promise<void> {
     if (this.initialized) {
       return;
+    }
+
+    if (!agentdbAvailable || !AgentDB) {
+      throw new Error('AgentDB not available - install with: npm install agentdb (requires native build tools)');
     }
 
     try {
@@ -467,7 +483,7 @@ export class AgentDBWrapper {
    *
    * @returns The raw AgentDB instance
    */
-  getRawInstance(): AgentDB {
+  getRawInstance(): any {
     this.ensureInitialized();
     return this.agentDB;
   }

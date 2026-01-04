@@ -1,6 +1,6 @@
 {
   "name": "agentdb",
-  "version": "2.0.0-alpha.3.3",
+  "version": "2.0.0-alpha.3.4",
   "description": "AgentDB v2 - RuVector-powered graph database with Cypher queries, hyperedges, and ACID persistence. 150x faster than SQLite with integrated vector search, GNN learning, semantic routing, and comprehensive memory patterns. Includes reflexion memory, skill library, causal reasoning, and MCP integration.",
   "type": "module",
   "main": "dist/src/index.js",
@@ -96,32 +96,17 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.20.1",
     "@opentelemetry/api": "^1.9.0",
-    "@opentelemetry/auto-instrumentations-node": "^0.47.0",
-    "@opentelemetry/exporter-metrics-otlp-http": "^0.52.0",
-    "@opentelemetry/exporter-prometheus": "^0.52.0",
-    "@opentelemetry/exporter-trace-otlp-http": "^0.52.0",
-    "@opentelemetry/resources": "^1.25.0",
-    "@opentelemetry/sdk-metrics": "^1.25.0",
-    "@opentelemetry/sdk-node": "^0.52.0",
-    "@opentelemetry/sdk-trace-base": "^1.25.0",
-    "@opentelemetry/semantic-conventions": "^1.25.0",
     "@ruvector/attention": "^0.1.2",
     "@ruvector/gnn": "^0.1.22",
     "@ruvector/graph-node": "^0.1.15",
     "@ruvector/router": "^0.1.15",
     "@ruvector/ruvllm": "^0.2.4",
     "@ruvector/sona": "^0.1.4",
-    "@xenova/transformers": "^2.17.2",
     "ajv": "^8.17.1",
-    "argon2": "^0.44.0",
-    "bcrypt": "^6.0.0",
     "chalk": "^5.3.0",
     "cli-table3": "^0.6.0",
     "commander": "^12.1.0",
     "dotenv": "^16.4.7",
-    "express-rate-limit": "^8.2.1",
-    "helmet": "^8.1.0",
-    "hnswlib-node": "^3.0.0",
     "inquirer": "^9.3.8",
     "jsonwebtoken": "^9.0.2",
     "marked-terminal": "^6.0.0",
@@ -129,8 +114,6 @@
     "ruvector": "^0.1.30",
     "ruvector-attention-wasm": "^0.1.0",
     "sql.js": "^1.13.0",
-    "sqlite": "^5.1.1",
-    "sqlite3": "^5.1.7",
     "zod": "^3.25.76"
   },
   "devDependencies": {
@@ -155,6 +138,29 @@
     "LICENSE"
   ],
   "optionalDependencies": {
-    "better-sqlite3": "^11.8.1"
+    "@opentelemetry/auto-instrumentations-node": "^0.47.0",
+    "@opentelemetry/exporter-metrics-otlp-http": "^0.52.0",
+    "@opentelemetry/exporter-prometheus": "^0.52.0",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.52.0",
+    "@opentelemetry/resources": "^1.25.0",
+    "@opentelemetry/sdk-metrics": "^1.25.0",
+    "@opentelemetry/sdk-node": "^0.52.0",
+    "@opentelemetry/sdk-trace-base": "^1.25.0",
+    "@opentelemetry/semantic-conventions": "^1.25.0",
+    "@xenova/transformers": "^2.17.2",
+    "argon2": "^0.44.0",
+    "bcrypt": "^6.0.0",
+    "better-sqlite3": "^11.8.1",
+    "express-rate-limit": "^8.2.1",
+    "helmet": "^8.1.0",
+    "hnswlib-node": "^3.0.0",
+    "sharp": "^0.32.6",
+    "sqlite": "^5.1.1",
+    "sqlite3": "^5.1.7"
+  },
+  "overrides": {
+    "@xenova/transformers": {
+      "sharp": "$sharp"
+    }
   }
 }

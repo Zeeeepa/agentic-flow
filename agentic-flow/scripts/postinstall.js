@@ -2,8 +2,9 @@
 /**
  * Postinstall script for agentic-flow
  *
- * Automatically patches AgentDB v1.3.9 import resolution issues
- * This runs after npm install, npm install -g, and npx
+ * - Patches AgentDB v1.3.9 import resolution issues
+ * - Handles Windows native module failures gracefully
+ * - This runs after npm install, npm install -g, and npx
  */
 
 import { readFileSync, writeFileSync, existsSync } from 'fs';
@@ -12,6 +13,8 @@ import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
+
+const isWindows = process.platform === 'win32';
 
 function findAgentDBPath() {
   const possiblePaths = [
@@ -90,9 +93,47 @@ function applyPatch() {
   }
 }
 
+function checkNativeModules() {
+  let hasBetterSqlite3 = false;
+  let hasSqlJs = false;
+  let hasSharp = false;
+
+  try {
+    require.resolve('better-sqlite3');
+    hasBetterSqlite3 = true;
+  } catch {}
+
+  try {
+    require.resolve('sql.js');
+    hasSqlJs = true;
+  } catch {}
+
+  try {
+    require.resolve('sharp');
+    hasSharp = true;
+  } catch {}
+
+  console.log('[agentic-flow] Native module status:');
+  console.log(`[agentic-flow]   better-sqlite3: ${hasBetterSqlite3 ? '✅' : '❌ (using sql.js fallback)'}`);
+  console.log(`[agentic-flow]   sql.js:         ${hasSqlJs ? '✅' : '❌'}`);
+  console.log(`[agentic-flow]   sharp:          ${hasSharp ? '✅' : '⚠️ (optional, image processing)'}`);
+
+  if (isWindows && !hasBetterSqlite3) {
+    console.log('[agentic-flow] ℹ️  Windows detected - using sql.js instead of better-sqlite3');
+    console.log('[agentic-flow]    This is normal and fully supported');
+  }
+
+  if (!hasBetterSqlite3 && !hasSqlJs) {
+    console.log('[agentic-flow] ⚠️  No SQLite implementation available');
+    console.log('[agentic-flow]    Some features may be limited');
+  }
+}
+
 try {
   applyPatch();
+  checkNativeModules();
+  console.log('[agentic-flow] ✅ Postinstall complete');
 } catch (error) {
-  console.log('[agentic-flow] ⚠️  Postinstall patch failed:', error.message);
-  console.log('[agentic-flow]    Runtime patch will attempt fix on first use');
+  console.log('[agentic-flow] ⚠️  Postinstall had issues:', error.message);
+  console.log('[agentic-flow]    This is usually OK - runtime will handle fallbacks');
 }

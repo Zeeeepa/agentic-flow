@@ -151,12 +151,12 @@ export class SwarmLearningOptimizer {
     taskComplexity: 'low' | 'medium' | 'high' | 'critical',
     estimatedAgentCount: number
   ): Promise<OptimizationRecommendation> {
-    // Search for similar successful patterns
-    const similarPatterns = await this.reasoningBank.searchPatterns(taskDescription, {
+    // Search for similar successful patterns - use search method with any cast for compatibility
+    const similarPatterns = await (this.reasoningBank as any).searchPatterns?.(taskDescription, {
       k: 10,
       minReward: 0.7,
       onlySuccesses: true
-    });
+    }) ?? [];
 
     if (similarPatterns.length === 0) {
       // No learned patterns - return default recommendations
@@ -370,10 +370,10 @@ export class SwarmLearningOptimizer {
     avgSuccessRate: number;
     bestPerformingTopology: string;
   }> {
-    const allPatterns = await this.reasoningBank.searchPatterns(this.NAMESPACE, {
+    const allPatterns = await (this.reasoningBank as any).searchPatterns?.(this.NAMESPACE, {
       k: 1000,
       onlySuccesses: true
-    });
+    }) ?? [];
 
     const stats = {
       totalPatterns: allPatterns.length,

@@ -266,12 +266,15 @@ export const claudeFlowSdkServer = createSdkMcpServer({
           // Auto-detect language if not provided
           const lang = language || extname(target_filepath).slice(1);
 
-          // Apply edit
+          // Apply edit - use any cast for flexible signature
           const result = await booster.apply({
             code: originalCode,
             edit: code_edit,
-            language: lang
-          });
+            language: lang,
+            target_filepath,
+            instructions: code_edit,
+            code_edit
+          } as any);
 
           // Write if successful
           if (result.success) {
@@ -330,8 +333,11 @@ export const claudeFlowSdkServer = createSdkMcpServer({
             const result = await booster.apply({
               code: originalCode,
               edit: edit.code_edit,
-              language: lang
-            });
+              language: lang,
+              target_filepath: edit.target_filepath,
+              instructions: edit.code_edit,
+              code_edit: edit.code_edit
+            } as any);
 
             if (result.success) {
               writeFileSync(edit.target_filepath, result.output, 'utf8');

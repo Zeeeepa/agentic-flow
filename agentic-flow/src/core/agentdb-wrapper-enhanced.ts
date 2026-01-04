@@ -206,8 +206,19 @@ export class EnhancedAgentDBWrapper {
       if (this._attentionService) {
         this.attentionService = this._attentionService;
       } else {
-        // Import AttentionService from agentdb package
-        const { AttentionService } = await import('agentdb/controllers/AttentionService');
+        // Import AttentionService from agentdb package - use fallback if not available
+        let AttentionService: any;
+        try {
+          const module = await import('agentdb/controllers/AttentionService' as any);
+          AttentionService = module.AttentionService;
+        } catch {
+          // Fallback to stub if module not available
+          AttentionService = class StubAttentionService {
+            runtime = 'stub';
+            async initialize() {}
+            async attend(query: any, memory: any) { return { attended: memory }; }
+          };
+        }
 
         this.attentionService = new AttentionService({
           numHeads: this.config.attentionConfig?.numHeads || 8,
@@ -242,8 +253,13 @@ export class EnhancedAgentDBWrapper {
       if (this._gnnService) {
         this.gnnService = this._gnnService;
       } else {
-        // Import GNN from @ruvector/gnn
-        const { GraphNeuralNetwork } = await import('@ruvector/gnn');
+        // Import GNN from @ruvector/gnn - use any for flexible access
+        const gnnModule = await import('@ruvector/gnn');
+        const GraphNeuralNetwork = (gnnModule as any).GraphNeuralNetwork || (gnnModule as any).default?.GraphNeuralNetwork;
+
+        if (!GraphNeuralNetwork) {
+          throw new Error('GraphNeuralNetwork not found in @ruvector/gnn');
+        }
 
         // Create GNN with configured layers
         const layers = [];

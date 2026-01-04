@@ -689,19 +689,20 @@ export class OptimizedEmbedder {
     }
 
     const ort = await import('onnxruntime-node');
+    const TensorClass = (ort as any).Tensor;
 
     // Create tensors with views into pre-allocated buffers
-    const inputIds = new ort.Tensor(
+    const inputIds = new TensorClass(
       'int64',
       this.inputIdsBuffer.subarray(0, seqLen),
       [1, seqLen]
     );
-    const attentionMask = new ort.Tensor(
+    const attentionMask = new TensorClass(
       'int64',
       this.attentionMaskBuffer.subarray(0, seqLen),
       [1, seqLen]
     );
-    const tokenTypeIds = new ort.Tensor(
+    const tokenTypeIds = new TensorClass(
       'int64',
       this.tokenTypeIdsBuffer.subarray(0, seqLen),
       [1, seqLen]

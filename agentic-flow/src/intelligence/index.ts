@@ -7,12 +7,16 @@
  * - @ruvector/sona: Micro-LoRA, Base-LoRA, EWC++, ReasoningBank, Trajectories
  * - @ruvector/attention: Multi-head, Flash, Hyperbolic, MoE, Graph, DualSpace
  * - ruvector core: HNSW indexing, vector similarity search
+ *
+ * Note: @ruvector/sona and @ruvector/attention are optional on Windows
  */
 
 export {
   RuVectorIntelligence,
   createIntelligenceLayer,
   IntelligencePresets,
+  sonaAvailable,
+  attentionAvailable,
   type RuVectorIntelligenceConfig,
   type Trajectory,
   type TrajectoryStep,
@@ -21,17 +25,37 @@ export {
   type OperationResult,
 } from './RuVectorIntelligence.js';
 
-// Re-export key types from @ruvector/sona
-export type {
-  JsSonaConfig as SonaConfig,
-  JsLearnedPattern as LearnedPattern,
-} from '@ruvector/sona';
+// Re-export key types from @ruvector/sona (optional)
+export interface SonaConfig {
+  embeddingDim?: number;
+  hiddenDim?: number;
+  microLoraRank?: number;
+  baseLoraRank?: number;
+  ewcLambda?: number;
+}
 
-// Re-export attention types
-export {
-  AttentionType,
-  type MoEConfig,
-} from '@ruvector/attention';
+export interface LearnedPattern {
+  id: string;
+  pattern: number[];
+  confidence: number;
+  timestamp: number;
+}
+
+// Attention types (optional - @ruvector/attention may not be available)
+export enum AttentionType {
+  MultiHead = 'multi_head',
+  Flash = 'flash',
+  Hyperbolic = 'hyperbolic',
+  MoE = 'moe',
+  GraphRoPe = 'graph_rope',
+  DualSpace = 'dual_space',
+}
+
+export interface MoEConfig {
+  numExperts?: number;
+  topK?: number;
+  routerDim?: number;
+}
 
 // Enhanced Agent Booster v2 with full RuVector intelligence
 export {

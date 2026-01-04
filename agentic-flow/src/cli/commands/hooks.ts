@@ -51,7 +51,12 @@ const mockContext = {
 
 export function createHooksCommand(): Command {
   const hooks = new Command('hooks')
-    .description('Self-learning intelligence hooks for agent routing and optimization');
+    .description('Self-learning intelligence hooks for agent routing and optimization')
+    .addHelpCommand(true) // Enable 'hooks help <subcommand>'
+    .action(() => {
+      // Default action when no subcommand provided - show help
+      hooks.outputHelp();
+    });
 
   // Pre-edit hook
   hooks
@@ -77,6 +82,7 @@ export function createHooksCommand(): Command {
           }
           console.log(`⏱️  Latency: ${result.latencyMs}ms`);
         }
+        process.exit(0);
       } catch (error) {
         console.error('Error:', error instanceof Error ? error.message : error);
         process.exit(1);
@@ -121,6 +127,7 @@ export function createHooksCommand(): Command {
           console.log(`📈 Pattern updated: ${result.newPatternValue?.toFixed(2) || 'N/A'}`);
           console.log(`📊 Routing accuracy: ${(result.routingAccuracy * 100).toFixed(1)}%`);
         }
+        process.exit(0);
       } catch (error) {
         console.error('Error:', error instanceof Error ? error.message : error);
         process.exit(1);
@@ -153,6 +160,7 @@ export function createHooksCommand(): Command {
             result.suggestions.forEach((s: string) => console.log(`   - ${s}`));
           }
         }
+        process.exit(0);
       } catch (error) {
         console.error('Error:', error instanceof Error ? error.message : error);
         process.exit(1);
@@ -193,6 +201,7 @@ export function createHooksCommand(): Command {
             console.log(`🔍 Error type: ${result.errorType}`);
           }
         }
+        process.exit(0);
       } catch (error) {
         console.error('Error:', error instanceof Error ? error.message : error);
         process.exit(1);
@@ -241,6 +250,7 @@ export function createHooksCommand(): Command {
           }
           console.log(`\n⏱️  Latency: ${result.latencyMs}ms`);
         }
+        process.exit(0);
       } catch (error) {
         console.error('Error:', error instanceof Error ? error.message : error);
         process.exit(1);
@@ -275,6 +285,7 @@ export function createHooksCommand(): Command {
             console.log(`   ${r.rank}. ${r.agent} - ${(r.score * 100).toFixed(1)}%`);
           });
         }
+        process.exit(0);
       } catch (error) {
         console.error('Error:', error instanceof Error ? error.message : error);
         process.exit(1);
@@ -319,6 +330,7 @@ export function createHooksCommand(): Command {
           }
           console.log(`   ⏱️  Duration: ${result.durationMs}ms`);
         }
+        process.exit(0);
       } catch (error) {
         console.error('Error:', error instanceof Error ? error.message : error);
         process.exit(1);
@@ -363,6 +375,7 @@ export function createHooksCommand(): Command {
           console.log(`\n   Agents created:`);
           result.agents.forEach((a: string) => console.log(`     • ${a}`));
         }
+        process.exit(0);
       } catch (error) {
         console.error('Error:', error instanceof Error ? error.message : error);
         process.exit(1);
@@ -411,6 +424,7 @@ export function createHooksCommand(): Command {
             result.health.issues.forEach((i: string) => console.log(`     ⚠️ ${i}`));
           }
         }
+        process.exit(0);
       } catch (error) {
         console.error('Error:', error instanceof Error ? error.message : error);
         process.exit(1);
@@ -454,6 +468,7 @@ export function createHooksCommand(): Command {
             console.log(`   🛠️  Target stack: ${result.targetStack.join(', ')}`);
           }
         }
+        process.exit(0);
       } catch (error) {
         console.error('Error:', error instanceof Error ? error.message : error);
         process.exit(1);
@@ -752,6 +767,7 @@ console.log(lines.join('\\n'));
         console.log('   1. Run: npx agentic-flow hooks pretrain');
         console.log('   2. Run: npx agentic-flow hooks build-agents');
         console.log('   3. Start using Claude Code with intelligent routing!');
+        process.exit(0);
       } catch (error) {
         console.error('Error:', error instanceof Error ? error.message : error);
         process.exit(1);
@@ -806,6 +822,7 @@ console.log(lines.join('\\n'));
             });
           }
         }
+        process.exit(0);
       } catch (error) {
         console.error('Error:', error instanceof Error ? error.message : error);
         process.exit(1);
@@ -839,6 +856,7 @@ console.log(lines.join('\\n'));
           console.log(`🧠 Features: ${result.features?.join(', ')}`);
           console.log(`\n💡 Use this ID with trajectory-step and trajectory-end commands`);
         }
+        process.exit(0);
       } catch (error) {
         console.error('Error:', error instanceof Error ? error.message : error);
         process.exit(1);
@@ -884,6 +902,7 @@ console.log(lines.join('\\n'));
           console.log(`   Reward: ${options.reward}`);
           console.log(`   Trajectory: ${trajectoryId}`);
         }
+        process.exit(0);
       } catch (error) {
         console.error('Error:', error instanceof Error ? error.message : error);
         process.exit(1);
@@ -922,6 +941,7 @@ console.log(lines.join('\\n'));
             console.log(`   Outcome: ${JSON.stringify(result.learningOutcome)}`);
           }
         }
+        process.exit(0);
       } catch (error) {
         console.error('Error:', error instanceof Error ? error.message : error);
         process.exit(1);
@@ -956,6 +976,7 @@ console.log(lines.join('\\n'));
           console.log(`   Score: ${((options.score || 0.9) * 100).toFixed(0)}%`);
           console.log(`   Index: HNSW (150x faster retrieval)`);
         }
+        process.exit(0);
       } catch (error) {
         console.error('Error:', error instanceof Error ? error.message : error);
         process.exit(1);
@@ -994,6 +1015,7 @@ console.log(lines.join('\\n'));
             });
           }
         }
+        process.exit(0);
       } catch (error) {
         console.error('Error:', error instanceof Error ? error.message : error);
         process.exit(1);
@@ -1033,6 +1055,7 @@ console.log(lines.join('\\n'));
           console.log(`   Patterns: ${result.persistence?.patterns ?? 0}`);
           console.log(`   Operations: ${result.persistence?.operations ?? 0}`);
         }
+        process.exit(0);
       } catch (error) {
         console.error('Error:', error instanceof Error ? error.message : error);
         process.exit(1);
@@ -1061,6 +1084,7 @@ console.log(lines.join('\\n'));
           console.log(`   Features: ${result.features?.join(', ')}`);
           console.log(`   Latency: ${result.latencyMs?.toFixed(2)}ms`);
         }
+        process.exit(0);
       } catch (error) {
         console.error('Error:', error instanceof Error ? error.message : error);
         process.exit(1);
@@ -1101,6 +1125,7 @@ console.log(lines.join('\\n'));
           });
           console.log(`\n   ⏱️  Latency: ${result.latencyMs?.toFixed(2)}ms`);
         }
+        process.exit(0);
       } catch (error) {
         console.error('Error:', error instanceof Error ? error.message : error);
         process.exit(1);

@@ -67,13 +67,13 @@ export class HybridReasoningBank {
     this.skills = new SkillLibrary(db, embedder);
     this.causalGraph = new CausalMemoryGraph(db);
 
-    // CausalRecall with optimized rerank config
+    // CausalRecall with optimized rerank config - use any for extended options
     this.causalRecall = new CausalRecall(db, embedder, {
       alpha: 0.6,  // 60% weight on similarity
       beta: 0.3,   // 30% weight on causal uplift
       gamma: 0.1,  // 10% penalty for latency
       minConfidence: 0.7
-    });
+    } as any);
 
     this.useWasm = options.preferWasm ?? true;
     this.wasmModule = null;

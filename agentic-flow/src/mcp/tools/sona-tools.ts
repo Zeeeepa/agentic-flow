@@ -660,6 +660,12 @@ function getProfileCharacteristics(profile: SONAProfile): any {
       latency: '~1ms',
       memory: '~50MB',
       qualityGain: '+25%'
+    },
+    'custom': {
+      throughput: 'configurable',
+      latency: 'configurable',
+      memory: 'configurable',
+      qualityGain: 'configurable'
     }
   };
 
