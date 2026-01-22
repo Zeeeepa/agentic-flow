@@ -34,12 +34,12 @@ export type {
 
 // Model mappings
 export {
-  OPENROUTER_MODELS,
-  ANTHROPIC_TO_OPENROUTER,
-  OPENROUTER_TO_ANTHROPIC,
-  getOpenRouterModel,
-  getAnthropicModel
+  CLAUDE_MODELS,
+  mapModelId,
+  getModelName,
+  listModels
 } from './model-mapping.js';
+export type { ModelMapping } from './model-mapping.js';
 
 // Providers
 export { OpenRouterProvider } from './providers/openrouter.js';
