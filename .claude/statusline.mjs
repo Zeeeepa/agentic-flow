@@ -1,286 +1,109 @@
-#!/usr/bin/env node
-// Agentic Flow Intelligence Status Line - Compact Format with Colors
-// Works on Windows, Mac, and Linux - Queries SQLite for real stats
+/**
+ * Agentic Flow Statusline for Claude Code
+ * Shows model, tokens, cost, swarm status, and memory usage
+ */
 
-import { readFileSync, statSync, existsSync } from 'fs';
 import { execSync } from 'child_process';
 
-const INTEL_FILE = '.agentic-flow/intelligence.json';
-const INTEL_DB = '.agentic-flow/intelligence.db';
+// Cache for expensive operations
+let lastSwarmCheck = 0;
+let cachedSwarmStatus = null;
+const CACHE_TTL = 5000; // 5 seconds
 
-// ============================================================================
-// Color Schemes (ANSI escape codes)
-// ============================================================================
-
-// Detect dark/light mode from environment or default to dark
-const isDarkMode = (() => {
-  // Check common environment variables
-  const colorScheme = process.env.COLORFGBG || '';
-  const termBg = process.env.TERM_BACKGROUND || '';
-  const vscodeTheme = process.env.VSCODE_TERMINAL_COLOR_THEME || '';
-
-  // Light mode indicators
-  if (termBg === 'light') return false;
-  if (vscodeTheme.toLowerCase().includes('light')) return false;
-  if (colorScheme.startsWith('0;') || colorScheme.includes(';15')) return false;
-
-  // Check CLAUDE_CODE_THEME if set
-  if (process.env.CLAUDE_CODE_THEME === 'light') return false;
-
-  // Default to dark mode
-  return true;
-})();
-
-// Color palettes
-const colors = {
-  dark: {
-    reset: '\x1b[0m',
-    dim: '\x1b[2m',
-    bold: '\x1b[1m',
-
-    // Main colors
-    model: '\x1b[38;5;208m',      // Orange
-    project: '\x1b[38;5;39m',      // Bright blue
-    branch: '\x1b[38;5;156m',      // Light green
-
-    // Stats colors
-    brain: '\x1b[38;5;213m',       // Pink/magenta
-    patterns: '\x1b[38;5;220m',    // Gold
-    memory: '\x1b[38;5;117m',      // Light cyan
-    trajectories: '\x1b[38;5;183m', // Light purple
-    agents: '\x1b[38;5;156m',      // Light green
-
-    // Routing colors
-    target: '\x1b[38;5;196m',      // Red
-    learning: '\x1b[38;5;226m',    // Yellow
-    epsilon: '\x1b[38;5;51m',      // Cyan
-    success: '\x1b[38;5;46m',      // Bright green
-
-    // Symbols
-    symbol: '\x1b[38;5;245m',      // Gray
-  },
-  light: {
-    reset: '\x1b[0m',
-    dim: '\x1b[2m',
-    bold: '\x1b[1m',
-
-    // Main colors (darker for light backgrounds)
-    model: '\x1b[38;5;166m',       // Dark orange
-    project: '\x1b[38;5;27m',      // Dark blue
-    branch: '\x1b[38;5;28m',       // Dark green
-
-    // Stats colors
-    brain: '\x1b[38;5;129m',       // Dark magenta
-    patterns: '\x1b[38;5;136m',    // Dark gold
-    memory: '\x1b[38;5;30m',       // Dark cyan
-    trajectories: '\x1b[38;5;91m', // Dark purple
-    agents: '\x1b[38;5;28m',       // Dark green
-
-    // Routing colors
-    target: '\x1b[38;5;160m',      // Dark red
-    learning: '\x1b[38;5;136m',    // Dark yellow/olive
-    epsilon: '\x1b[38;5;31m',      // Dark cyan
-    success: '\x1b[38;5;28m',      // Dark green
-
-    // Symbols
-    symbol: '\x1b[38;5;240m',      // Dark gray
+/**
+ * Get swarm status (cached)
+ */
+function getSwarmStatus() {
+  const now = Date.now();
+  if (cachedSwarmStatus && (now - lastSwarmCheck) < CACHE_TTL) {
+    return cachedSwarmStatus;
   }
-};
 
-const c = isDarkMode ? colors.dark : colors.light;
-
-// ============================================================================
-// Helpers
-// ============================================================================
-
-function readJson(file) {
   try {
-    return JSON.parse(readFileSync(file, 'utf8'));
-  } catch {
-    return null;
-  }
-}
-
-function querySqlite(db, sql) {
-  try {
-    const result = execSync(`sqlite3 "${db}" "${sql}"`, {
-      encoding: 'utf8',
-      stdio: ['pipe', 'pipe', 'pipe'],
-      timeout: 1000
+    const result = execSync('npx agentic-flow@alpha mcp status 2>/dev/null || echo "idle"', {
+      encoding: 'utf-8',
+      timeout: 2000
     }).trim();
-    return result;
+
+    cachedSwarmStatus = result.includes('running') ? '🐝' : '⚡';
+    lastSwarmCheck = now;
+    return cachedSwarmStatus;
   } catch {
-    try {
-      const result = execSync(`sqlite3.exe "${db}" "${sql}"`, {
-        encoding: 'utf8',
-        stdio: ['pipe', 'pipe', 'pipe'],
-        timeout: 1000
-      }).trim();
-      return result;
-    } catch {
-      return null;
-    }
+    cachedSwarmStatus = '⚡';
+    lastSwarmCheck = now;
+    return cachedSwarmStatus;
   }
 }
 
-function getGitBranch() {
-  try {
-    return execSync('git branch --show-current', { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
-  } catch {
-    return '';
+/**
+ * Format token count
+ */
+function formatTokens(tokens) {
+  if (tokens >= 1000000) {
+    return `${(tokens / 1000000).toFixed(1)}M`;
   }
+  if (tokens >= 1000) {
+    return `${(tokens / 1000).toFixed(1)}K`;
+  }
+  return String(tokens);
 }
 
-function getProjectName() {
-  try {
-    const cwd = process.cwd();
-    return cwd.split('/').pop() || 'project';
-  } catch {
-    return 'project';
+/**
+ * Format cost
+ */
+function formatCost(cost) {
+  if (cost >= 1) {
+    return `$${cost.toFixed(2)}`;
   }
+  return `$${cost.toFixed(4)}`;
 }
 
-function formatSize(bytes) {
-  if (bytes < 1024) return `${bytes}B`;
-  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)}K`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)}M`;
-}
+/**
+ * Main statusline export
+ */
+export default function statusline(context) {
+  const parts = [];
 
-// ============================================================================
-// Data Collection
-// ============================================================================
+  // Agentic Flow indicator
+  parts.push('🤖');
 
-const LEARNING_RATE = parseFloat(process.env.AGENTIC_FLOW_LEARNING_RATE || '0.1');
-const EPSILON = parseFloat(process.env.AGENTIC_FLOW_EPSILON || '0.1');
-
-const intel = readJson(INTEL_FILE);
-
-let dbStats = {
-  totalTrajectories: 0,
-  successfulTrajectories: 0,
-  totalRoutings: 0,
-  successfulRoutings: 0,
-  totalPatterns: 0,
-  sonaAdaptations: 0,
-  hnswQueries: 0,
-  avgLatency: 0,
-  totalAgents: 0,
-  activeAgents: 0
-};
-
-if (existsSync(INTEL_DB)) {
-  const statsRow = querySqlite(INTEL_DB, 'SELECT * FROM stats LIMIT 1');
-  if (statsRow) {
-    const cols = statsRow.split('|');
-    dbStats.totalTrajectories = parseInt(cols[1]) || 0;
-    dbStats.successfulTrajectories = parseInt(cols[2]) || 0;
-    dbStats.totalRoutings = parseInt(cols[3]) || 0;
-    dbStats.successfulRoutings = parseInt(cols[4]) || 0;
-    dbStats.totalPatterns = parseInt(cols[5]) || 0;
-    dbStats.sonaAdaptations = parseInt(cols[6]) || 0;
-    dbStats.hnswQueries = parseInt(cols[7]) || 0;
+  // Model name (shortened)
+  if (context.model) {
+    const model = context.model
+      .replace('claude-', '')
+      .replace('-20250514', '')
+      .replace('sonnet-4', 'S4')
+      .replace('opus-4', 'O4')
+      .replace('haiku-3.5', 'H3.5');
+    parts.push(model);
   }
 
-  const trajCount = querySqlite(INTEL_DB, 'SELECT COUNT(*) FROM trajectories');
-  if (trajCount) {
-    dbStats.totalTrajectories = parseInt(trajCount) || dbStats.totalTrajectories;
+  // Token usage
+  if (context.inputTokens !== undefined || context.outputTokens !== undefined) {
+    const input = formatTokens(context.inputTokens || 0);
+    const output = formatTokens(context.outputTokens || 0);
+    parts.push(`↑${input} ↓${output}`);
   }
 
-  const routingStats = querySqlite(INTEL_DB, 'SELECT COUNT(*), SUM(was_successful), AVG(latency_ms) FROM routings');
-  if (routingStats) {
-    const cols = routingStats.split('|');
-    if (parseInt(cols[0]) > 0) {
-      dbStats.totalRoutings = parseInt(cols[0]) || 0;
-      dbStats.successfulRoutings = parseInt(cols[1]) || 0;
-      dbStats.avgLatency = parseFloat(cols[2]) || 0;
+  // Cost
+  if (context.totalCost !== undefined && context.totalCost > 0) {
+    parts.push(formatCost(context.totalCost));
+  }
+
+  // Swarm/MCP status indicator
+  parts.push(getSwarmStatus());
+
+  // Session time
+  if (context.sessionStartTime) {
+    const elapsed = Math.floor((Date.now() - context.sessionStartTime) / 1000);
+    const mins = Math.floor(elapsed / 60);
+    const secs = elapsed % 60;
+    if (mins > 0) {
+      parts.push(`${mins}m${secs}s`);
+    } else {
+      parts.push(`${secs}s`);
     }
   }
 
-  const patternCount = querySqlite(INTEL_DB, 'SELECT COUNT(*) FROM patterns');
-  if (patternCount) {
-    dbStats.totalPatterns = parseInt(patternCount) || 0;
-  }
-
-  const agentCount = querySqlite(INTEL_DB, "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='agents'");
-  if (agentCount === '1') {
-    const agents = querySqlite(INTEL_DB, 'SELECT COUNT(*), SUM(CASE WHEN status="active" THEN 1 ELSE 0 END) FROM agents');
-    if (agents) {
-      const cols = agents.split('|');
-      dbStats.totalAgents = parseInt(cols[0]) || 0;
-      dbStats.activeAgents = parseInt(cols[1]) || 0;
-    }
-  }
+  return parts.join(' │ ');
 }
-
-const jsonRoutes = intel?.metrics?.totalRoutes || 0;
-const routes = dbStats.totalRoutings > 0 ? dbStats.totalRoutings : jsonRoutes;
-const patterns = dbStats.totalPatterns > 0 ? dbStats.totalPatterns : (intel?.patterns ? Object.keys(intel.patterns).length : 0);
-const memories = intel?.memories?.length || 0;
-const trajectories = dbStats.totalTrajectories;
-
-let agents = dbStats.totalAgents;
-let activeAgents = dbStats.activeAgents;
-if (agents === 0 && intel?.agents) {
-  agents = Object.keys(intel.agents).length;
-  activeAgents = Object.values(intel.agents).filter(a => a.status === 'active').length;
-}
-if (agents === 0) {
-  agents = 66;
-}
-
-const branch = getGitBranch();
-const project = getProjectName();
-
-let dbSize = 0;
-if (existsSync(INTEL_DB)) {
-  try {
-    const stats = statSync(INTEL_DB);
-    dbSize = stats.size;
-  } catch {}
-}
-
-// ============================================================================
-// Build Colored Output
-// ============================================================================
-
-const lines = [];
-
-// Line 1: Model + project + branch
-let line1 = `${c.model}${c.bold}Opus 4.5${c.reset}`;
-line1 += ` ${c.dim}in${c.reset} ${c.project}${project}${c.reset}`;
-if (branch) {
-  line1 += ` ${c.dim}on${c.reset} ${c.symbol}⎇${c.reset} ${c.branch}${branch}${c.reset}`;
-}
-lines.push(line1);
-
-// Line 2: RuVector stats
-let line2 = `${c.brain}🧠 RuVector${c.reset}`;
-line2 += ` ${c.symbol}◆${c.reset} ${c.patterns}${patterns}${c.reset} ${c.dim}patterns${c.reset}`;
-if (memories > 0 || dbSize > 0) {
-  line2 += ` ${c.symbol}⬡${c.reset} ${c.memory}${memories > 0 ? memories : formatSize(dbSize)}${c.reset} ${c.dim}mem${c.reset}`;
-}
-if (trajectories > 0) {
-  line2 += ` ${c.symbol}↝${c.reset}${c.trajectories}${trajectories}${c.reset}`;
-}
-if (agents > 0) {
-  line2 += ` ${c.symbol}#${c.reset}${c.agents}${activeAgents > 0 ? activeAgents + '/' : ''}${agents}${c.reset}`;
-}
-lines.push(line2);
-
-// Line 3: Routing info
-const lrPercent = Math.round(LEARNING_RATE * 100);
-const epsPercent = Math.round(EPSILON * 100);
-let line3 = `${c.target}🎯 Routing${c.reset}`;
-line3 += ` ${c.dim}q-learning${c.reset}`;
-line3 += ` ${c.learning}lr:${lrPercent}%${c.reset}`;
-line3 += ` ${c.epsilon}ε:${epsPercent}%${c.reset}`;
-if (routes > 0) {
-  const successRate = dbStats.successfulRoutings > 0
-    ? Math.round((dbStats.successfulRoutings / routes) * 100)
-    : 100;
-  line3 += ` ${c.symbol}|${c.reset} ${c.success}${successRate}% ✓${c.reset}`;
-}
-lines.push(line3);
-
-// Output
-console.log(lines.join('\n'));
