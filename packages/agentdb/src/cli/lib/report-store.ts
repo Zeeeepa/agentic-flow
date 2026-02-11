@@ -5,11 +5,18 @@
  * trend analysis, and comparison tools.
  */
 
-import * as sqlite3 from 'sqlite3';
-import { Database, open } from 'sqlite';
 import * as path from 'path';
 import * as fs from 'fs';
 import { AgentDBConfig, SimulationResult } from './simulation-registry';
+
+// Use better-sqlite3 if available (optional dependency)
+let Database: any;
+try {
+  Database = require('better-sqlite3');
+} catch {
+  // Fallback to in-memory store if better-sqlite3 not installed
+  console.warn('better-sqlite3 not installed, using in-memory storage only');
+}
 
 // ============================================================================
 // Types
@@ -53,7 +60,7 @@ export interface Regression {
 // ============================================================================
 
 export class ReportStore {
-  private db: Database | null = null;
+  private db: any = null;
   private dbPath: string;
 
   constructor(dbPath: string = ':memory:') {
@@ -68,6 +75,10 @@ export class ReportStore {
    * Initialize database connection and create schema.
    */
   async initialize(): Promise<void> {
+    if (!Database) {
+      throw new Error('better-sqlite3 not available. Install it with: npm install better-sqlite3');
+    }
+
     // Ensure directory exists
     if (this.dbPath !== ':memory:') {
       const dir = path.dirname(this.dbPath);
@@ -76,11 +87,8 @@ export class ReportStore {
       }
     }
 
-    // Open database
-    this.db = await open({
-      filename: this.dbPath,
-      driver: sqlite3.Database
-    });
+    // Open database with better-sqlite3
+    this.db = new Database(this.dbPath);
 
     // Create schema
     await this.createSchema();
@@ -92,7 +100,7 @@ export class ReportStore {
   private async createSchema(): Promise<void> {
     if (!this.db) throw new Error('Database not initialized');
 
-    await this.db.exec(`
+    this.db.exec(`
       -- Simulation runs
       CREATE TABLE IF NOT EXISTS simulations (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -155,7 +163,7 @@ export class ReportStore {
    */
   async close(): Promise<void> {
     if (this.db) {
-      await this.db.close();
+      this.db.close();
       this.db = null;
     }
   }
@@ -171,12 +179,12 @@ export class ReportStore {
     if (!this.db) throw new Error('Database not initialized');
 
     // Insert simulation record
-    const insertResult = await this.db.run(`
+    const insertResult = this.db.prepare(`
       INSERT INTO simulations (
         scenario_id, scenario_name, timestamp, config_json, profile,
         agentdb_version, duration_ms, iterations, status
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `, [
+    `).run(
       result.scenario,
       result.scenario,
       result.timestamp.toISOString(),
@@ -186,32 +194,31 @@ export class ReportStore {
       result.duration || 0,
       result.iterations || 1,
       'completed'
-    ]);
+    );
 
-    const simulationId = insertResult.lastID!;
+    const simulationId = insertResult.lastInsertRowid as number;
 
     // Insert metrics
+    const insertMetric = this.db.prepare(`
+      INSERT INTO metrics (simulation_id, metric_name, metric_value)
+      VALUES (?, ?, ?)
+    `);
     for (const [metricName, metricValue] of Object.entries(result.metrics)) {
-      await this.db.run(`
-        INSERT INTO metrics (simulation_id, metric_name, metric_value)
-        VALUES (?, ?, ?)
-      `, [simulationId, metricName, metricValue]);
+      insertMetric.run(simulationId, metricName, metricValue);
     }
 
     // Insert insights
+    const insertInsight = this.db.prepare(`
+      INSERT INTO insights (simulation_id, type, content, category)
+      VALUES (?, ?, ?, ?)
+    `);
     for (const insight of result.insights) {
-      await this.db.run(`
-        INSERT INTO insights (simulation_id, type, content, category)
-        VALUES (?, ?, ?, ?)
-      `, [simulationId, 'insight', insight, 'general']);
+      insertInsight.run(simulationId, 'insight', insight, 'general');
     }
 
     // Insert recommendations
     for (const recommendation of result.recommendations) {
-      await this.db.run(`
-        INSERT INTO insights (simulation_id, type, content, category)
-        VALUES (?, ?, ?, ?)
-      `, [simulationId, 'recommendation', recommendation, 'general']);
+      insertInsight.run(simulationId, 'recommendation', recommendation, 'general');
     }
 
     return simulationId;
@@ -223,41 +230,41 @@ export class ReportStore {
   async get(id: number): Promise<SimulationResult | null> {
     if (!this.db) throw new Error('Database not initialized');
 
-    const simulation = await this.db.get(`
+    const simulation = this.db.prepare(`
       SELECT * FROM simulations WHERE id = ?
-    `, [id]);
+    `).get(id);
 
     if (!simulation) return null;
 
     // Get metrics
-    const metrics = await this.db.all(`
+    const metrics = this.db.prepare(`
       SELECT metric_name, metric_value FROM metrics
       WHERE simulation_id = ? AND iteration = 0
-    `, [id]);
+    `).all(id);
 
     // Get insights
-    const insights = await this.db.all(`
+    const insights = this.db.prepare(`
       SELECT content FROM insights
       WHERE simulation_id = ? AND type = 'insight'
-    `, [id]);
+    `).all(id);
 
     // Get recommendations
-    const recommendations = await this.db.all(`
+    const recommendations = this.db.prepare(`
       SELECT content FROM insights
       WHERE simulation_id = ? AND type = 'recommendation'
-    `, [id]);
+    `).all(id);
 
     return {
       id: simulation.id,
       scenario: simulation.scenario_id,
       timestamp: new Date(simulation.timestamp),
       config: JSON.parse(simulation.config_json),
-      metrics: metrics.reduce((acc, m) => {
+      metrics: metrics.reduce((acc: any, m: any) => {
         acc[m.metric_name] = m.metric_value;
         return acc;
       }, {} as any),
-      insights: insights.map(i => i.content),
-      recommendations: recommendations.map(r => r.content),
+      insights: insights.map((i: any) => i.content),
+      recommendations: recommendations.map((r: any) => r.content),
       iterations: simulation.iterations,
       duration: simulation.duration_ms
     };
@@ -269,11 +276,11 @@ export class ReportStore {
   async list(limit: number = 10): Promise<SimulationResult[]> {
     if (!this.db) throw new Error('Database not initialized');
 
-    const simulations = await this.db.all(`
+    const simulations = this.db.prepare(`
       SELECT id FROM simulations
       ORDER BY timestamp DESC
       LIMIT ?
-    `, [limit]);
+    `).all(limit);
 
     const results: SimulationResult[] = [];
 
@@ -291,11 +298,11 @@ export class ReportStore {
   async findByScenario(scenarioId: string): Promise<SimulationResult[]> {
     if (!this.db) throw new Error('Database not initialized');
 
-    const simulations = await this.db.all(`
+    const simulations = this.db.prepare(`
       SELECT id FROM simulations
       WHERE scenario_id = ?
       ORDER BY timestamp DESC
-    `, [scenarioId]);
+    `).all(scenarioId);
 
     const results: SimulationResult[] = [];
 
@@ -374,13 +381,13 @@ export class ReportStore {
   async getTrends(scenarioId: string, metric: string): Promise<TrendData> {
     if (!this.db) throw new Error('Database not initialized');
 
-    const rows = await this.db.all(`
+    const rows = this.db.prepare(`
       SELECT s.id, s.timestamp, m.metric_value
       FROM simulations s
       JOIN metrics m ON s.id = m.simulation_id
       WHERE s.scenario_id = ? AND m.metric_name = ?
       ORDER BY s.timestamp ASC
-    `, [scenarioId, metric]);
+    `).all(scenarioId, metric);
 
     const points = rows.map(r => ({
       timestamp: new Date(r.timestamp),
@@ -422,12 +429,12 @@ export class ReportStore {
     if (!this.db) throw new Error('Database not initialized');
 
     // Get all metrics for this scenario
-    const metricNames = await this.db.all(`
+    const metricNames = this.db.prepare(`
       SELECT DISTINCT m.metric_name
       FROM simulations s
       JOIN metrics m ON s.id = m.simulation_id
       WHERE s.scenario_id = ?
-    `, [scenarioId]);
+    `).all(scenarioId);
 
     const regressions: Regression[] = [];
 
@@ -539,7 +546,7 @@ export class ReportStore {
     // SQLite backup API - path is now validated
     // Note: VACUUM INTO requires the path as a string literal,
     // but we've validated it only contains safe characters
-    await this.db.exec(`VACUUM INTO '${normalizedPath}'`);
+    this.db.exec(`VACUUM INTO '${normalizedPath}'`);
   }
 
   // --------------------------------------------------------------------------
@@ -558,31 +565,31 @@ export class ReportStore {
   }> {
     if (!this.db) throw new Error('Database not initialized');
 
-    const totalSimulations = await this.db.get(`
+    const totalSimulations = this.db.prepare(`
       SELECT COUNT(*) as count FROM simulations
-    `);
+    `).get();
 
-    const totalMetrics = await this.db.get(`
+    const totalMetrics = this.db.prepare(`
       SELECT COUNT(*) as count FROM metrics
-    `);
+    `).get();
 
-    const totalInsights = await this.db.get(`
+    const totalInsights = this.db.prepare(`
       SELECT COUNT(*) as count FROM insights
-    `);
+    `).get();
 
-    const scenarios = await this.db.all(`
+    const scenarios = this.db.prepare(`
       SELECT scenario_id as id, COUNT(*) as count
       FROM simulations
       GROUP BY scenario_id
       ORDER BY count DESC
-    `);
+    `).all();
 
-    const profiles = await this.db.all(`
+    const profiles = this.db.prepare(`
       SELECT profile, COUNT(*) as count
       FROM simulations
       GROUP BY profile
       ORDER BY count DESC
-    `);
+    `).all();
 
     return {
       totalSimulations: totalSimulations.count,
