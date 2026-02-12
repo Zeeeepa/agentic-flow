@@ -1700,10 +1700,9 @@ class AgentDBCLI {
  * Helper function to execute Commander-based commands
  */
 async function handleCommanderCommand(command: any, args: string[]): Promise<void> {
-  const { Command } = await import('commander');
-  const program = new Command();
-  program.addCommand(command);
-  await program.parseAsync(['node', 'agentdb', ...args], { from: 'user' });
+  // Parse directly using the command instance without wrapping in a parent program
+  // This avoids issues with subcommand routing
+  await command.parseAsync(['node', command.name(), ...args], { from: 'user' });
 }
 
 async function main() {
