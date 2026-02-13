@@ -1,6 +1,6 @@
 {
   "name": "agentic-flow",
-  "version": "2.0.1-alpha.60",
+  "version": "2.0.2-alpha",
   "description": "Production-ready AI agent orchestration platform with 66 specialized agents, 213 MCP tools, ReasoningBank learning memory, quantum-resistant Jujutsu VCS, and autonomous multi-agent swarms. Built by @ruvnet with Claude Agent SDK, neural networks, memory persistence, GitHub integration, and distributed consensus protocols.",
   "type": "module",
   "main": "agentic-flow/dist/index.js",
@@ -14,6 +14,7 @@
   },
   "exports": {
     ".": "./agentic-flow/dist/index.js",
+    "./package.json": "./package.json",
     "./wrappers": "./agentic-flow/dist/core/index.js",
     "./wrappers/gnn": "./agentic-flow/dist/core/gnn-wrapper.js",
     "./wrappers/agentdb-fast": "./agentic-flow/dist/core/agentdb-fast.js",
@@ -268,5 +269,11 @@
     "flow-nexus": {
       "optional": true
     }
+  },
+  "optionalDependencies": {
+    "@ruvector/attention-linux-x64-gnu": "^0.1.1",
+    "@ruvector/attention-darwin-arm64": "^0.1.1",
+    "@ruvector/attention-darwin-x64": "^0.1.1",
+    "@ruvector/attention-win32-x64-msvc": "^0.1.1"
   }
 }
