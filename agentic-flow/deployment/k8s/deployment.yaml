@@ -1,0 +1,172 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agentic-flow
+  labels:
+    app: agentic-flow
+    version: v1.6.4
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: agentic-flow
+  template:
+    metadata:
+      labels:
+        app: agentic-flow
+        version: v1.6.4
+    spec:
+      containers:
+      - name: agentic-flow
+        image: agentic-flow:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+          name: health
+          protocol: TCP
+        - containerPort: 4433
+          name: quic
+          protocol: UDP
+        env:
+        - name: NODE_ENV
+          value: "production"
+        - name: PROVIDER
+          valueFrom:
+            configMapKeyRef:
+              name: agentic-flow-config
+              key: provider
+        - name: COMPLETION_MODEL
+          valueFrom:
+            configMapKeyRef:
+              name: agentic-flow-config
+              key: completion-model
+        - name: ANTHROPIC_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: agentic-flow-secrets
+              key: anthropic-api-key
+              optional: true
+        - name: OPENROUTER_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: agentic-flow-secrets
+              key: openrouter-api-key
+              optional: true
+        - name: GOOGLE_GEMINI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: agentic-flow-secrets
+              key: google-gemini-api-key
+              optional: true
+        - name: ENABLE_AGENT_BOOSTER
+          value: "true"
+        - name: REASONINGBANK_ENABLED
+          value: "true"
+        - name: ENABLE_QUIC
+          value: "true"
+        - name: ENABLE_OPTIMIZATION
+          value: "true"
+        - name: HEALTH_PORT
+          value: "8080"
+        - name: KEEP_ALIVE
+          value: "true"
+        volumeMounts:
+        - name: reasoningbank-storage
+          mountPath: /app/.swarm
+        - name: workspace
+          mountPath: /workspace
+        resources:
+          requests:
+            memory: "2Gi"
+            cpu: "1000m"
+          limits:
+            memory: "4Gi"
+            cpu: "2000m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+      volumes:
+      - name: reasoningbank-storage
+        persistentVolumeClaim:
+          claimName: reasoningbank-pvc
+      - name: workspace
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: agentic-flow-service
+  labels:
+    app: agentic-flow
+spec:
+  type: LoadBalancer
+  selector:
+    app: agentic-flow
+  ports:
+  - name: health
+    protocol: TCP
+    port: 8080
+    targetPort: 8080
+  - name: quic
+    protocol: UDP
+    port: 4433
+    targetPort: 4433
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: agentic-flow-config
+data:
+  provider: "openrouter"
+  completion-model: "deepseek/deepseek-chat"
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: reasoningbank-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: standard
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: agentic-flow-hpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: agentic-flow
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+
